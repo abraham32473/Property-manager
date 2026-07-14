@@ -1,0 +1,314 @@
+DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PropTrack - Property Manager</title>
+<meta name="theme-color" content="#1a2744" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #f7f8fc; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState } = React;
+const C = { navy:"#1a2744", accent:"#e8a838", red:"#dc3545", green:"#2e7d32", blue:"#1565c0", orange:"#d84315", bg:"#f7f8fc", white:"#fff", border:"#e2e6ef", text:"#1a2744", muted:"#6b7a99" };
+const props0 = [
+{id:1,address:"42 Maple Street, Unit 3B",tenant:"Sarah Johnson",rent:1850,leaseEnd:"2026-12-31"},
+{id:2,address:"108 Oak Avenue, Unit 1A",tenant:"Marcus Webb",rent:2200,leaseEnd:"2026-09-30"},
+{id:3,address:"77 Pine Road, Unit 5C",tenant:"Lisa Chen",rent:1650,leaseEnd:"2027-03-31"}
+];
+const repairs0 = [
+{id:1,propertyId:1,title:"Leaky faucet in kitchen",priority:"Medium",status:"In Progress",date:"2026-06-10",cost:180,notes:"Plumber scheduled"},
+{id:2,propertyId:2,title:"HVAC not cooling",priority:"High",status:"Open",date:"2026-06-20",cost:0,notes:"Awaiting quote"},
+{id:3,propertyId:1,title:"Broken door lock",priority:"High",status:"Resolved",date:"2026-05-15",cost:240,notes:"Lock replaced"}
+];
+const rent0 = [
+{id:1,propertyId:1,oldRent:1750,newRent:1850,effectiveDate:"2026-01-01",reason:"Annual increase"},
+{id:2,propertyId:2,oldRent:2100,newRent:2200,effectiveDate:"2026-04-01",reason:"Market adjustment"}
+];
+const dmg0 = [
+{id:1,propertyId:3,description:"Hole in bedroom drywall",severity:"Moderate",reportedDate:"2026-05-30",estimatedCost:320,status:"Deducted from deposit"}
+];
+const TABS = ["Dashboard","Properties","Repairs","Rent History","Damage Log"];
+function Pill({label,fg,bg}){return <spanfunction Modal({title,onClose,children}){
+return (
+<div style={{position:"fixed",inset:0,background:"#0006",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
+<div style={{background:C.white,borderRadius:12,padding:24,width:440,maxWidth:"92vw",maxHeight:"85vh",overflowY:"auto"}}>
+<div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}>
+<h3 style={{margin:0,color:C.navy}}>{title}</h3>
+<button onClick={onClose} style={{background:"none",border:"none",fontSize:22}}>×</button>
+</div>
+{children}
+</div>
+</div>
+);
+}
+function Field({label,children}){
+return (
+<div style={{marginBottom:12}}>
+<label style={{display:"block",fontSize:12,fontWeight:600,color:C.muted,marginBottom:4}}>{label}</label>
+{children}
+</div>
+);
+}
+const inp = {width:"100%",padding:"8px",border:"1px solid "+C.border,borderRadius:6,fontSize:14,background:C.bg,boxSizing:"border-box"};
+const btnP = {background:C.navy,color:"#fff",border:"none",borderRadius:6,padding:"9px 18px",fontWeight:600};
+const btnS = {background:"transparent",color:C.navy,border:"1px solid "+C.border,borderRadius:6,padding:"9px 18px",fontWeight:600};
+
+function App(){
+const [tab,setTab]=useState("Dashboard");
+const [properties,setProperties]=useState(props0);
+const [repairs,setRepairs]=useState(repairs0);
+const [rentHistory,setRentHistory]=useState(rent0);
+const [damages,setDamages]=useState(dmg0);
+const [modal,setModal]=useState(null);
+const [form,setForm]=useState({});
+const openModal=(t,d={})=>{setModal(t);setForm(d);};
+const closeModal=()=>{setModal(null);setForm({});};
+const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+const addProperty=()=>{
+if(!form.address||!form.tenant)return;
+setProperties(p=>[...p,{id:Date.now(),address:form.address,tenant:form.tenant,rent:Number(form.rent)||0,leaseEnd:form.leaseEnd||""}]);
+closeModal();
+};
+const addRepair=()=>{
+if(!form.title||!form.propertyId)return;
+setRepairs(r=>[...r,{id:Date.now(),propertyId:Number(form.propertyId),title:form.title,priority:form.priority||"Medium",status:"Open",date:form.date||new Date().toISOString().slice(0,10),cost:Number(form.cost)||0,notes:form.notes||""}]);
+closeModal();
+};
+const addRentIncrease=()=>{
+if(!form.propertyId||!form.newRent)return;
+const prop=properties.find(p=>p.id===Number(form.propertyId));
+setRentHistory(h=>[...h,{id:Date.now(),propertyId:Number(form.propertyId),oldRent:prop?prop.rent:0,newRent:Number(form.newRent),effectiveDate:form.effectiveDate||"",reason:form.reason||""}]);
+setProperties(ps=>ps.map(p=>p.id===Number(form.propertyId)?{...p,rent:Number(form.newRent)}:p));
+closeModal();
+};
+const addDamage=()=>{
+if(!form.propertyId||!form.description)return;
+setDamages(d=>[...d,{id:Date.now(),propertyId:Number(form.propertyId),description:form.description,severity:form.severity||"Minor",reportedDate:form.reportedDate||new Date().toISOString().slice(0,10),estimatedCost:Number(form.estimatedCost)||0,status:"Pending"}]);
+closeModal();
+};
+const updateRepairStatus=(id,status)=>setRepairs(rs=>rs.map(r=>r.id===id?{...r,status}:r));
+const updateDamageStatus=(id,status)=>setDamages(ds=>ds.map(d=>d.id===id?{...d,status}:d));
+const propName=(id)=>{const p=properties.find(p=>p.id===id);return p?p.address.split(",")[0]:"Unknown";};
+
+const openRepairs=repairs.filter(r=>r.status!=="Resolved").length;
+const totalRepairCost=repairs.reduce((s,r)=>s+r.cost,0);
+const totalDamageCost=damages.reduce((s,d)=>s+d.estimatedCost,0);
+const monthlyRent=properties.reduce((return (
+<div style={{display:"flex",minHeight:"100vh",fontFamily:"Arial,sans-serif",background:C.bg}}>
+<div style={{width:200,background:C.navy,flexShrink:0}}>
+<div style={{padding:"24px 16px",borderBottom:"1px solid #243358"}}>
+<div style={{fontSize:11,color:C.accent,fontWeight:700}}>PROPTRACK</div>
+<div style={{fontSize:17,color:"#fff",fontWeight:700,marginTop:4}}>Property Manager</div>
+</div>
+<nav style={{padding:"10px 0"}}>
+{TABS.map(t=>(
+<button key={t} onClick={()=>setTab(t)} style={{display:"block",width:"100%",textAlign:"left",padding:"11px 16px",background:tab===t?"#243358":"transparent",color:tab===t?"#fff":"#8fa0c0",border:"none",fontSize:14,fontWeight:tab===t?600:400}}>{t}</button>
+))}
+</nav>
+</div>
+<div style={{flex:1,overflowY:"auto"}}>
+<div style={{background:C.white,borderBottom:"1px solid "+C.border,padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+<h1 style={{margin:0,fontSize:19,color:C.navy}}>{tab}</h1>
+{tab==="Properties"&&<button style={btnP} onClick={()=>openModal("property")}>+ Add Property</button>}
+{tab==="Repairs"&&<button style={btnP} onClick={()=>openModal("repair")}>+ Log Repair</button>}
+{tab==="Rent History"&&<button style={btnP} onClick={()=>openModal("rent")}>+ Rent Increase</button>}
+{tab==="Damage Log"&&<button style={btnP} onClick={()=>openModal("damage")}>+ Log Damage</button>}
+</div>
+<div style={{padding:20}}>
+
+{tab==="Dashboard"&&(
+<div>
+<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:20}}>
+{[["Monthly Rent","$"+monthlyRent.toLocaleString(),C.green],["Open Repairs",openRepairs,openRepairs>0?C.red:C.green],["Repair Costs","$"+totalRepairCost.toLocaleString(),C.orange],["Damage Claims","$"+totalDamageCost.toLocaleString(),C.blue]].map(c=>(
+<div key={c[0]} style={{background:C.white,border:"1px solid "+C.border,borderRadius:10,padding:16,borderTop:"3px solid "+c[2]}}>
+<div style={{fontSize:11,color:C.muted,fontWeight:600}}>{c[0]}</div>
+<div style={{fontSize:24,fontWeight:700,color:C.navy,marginTop:4}}>{c[1]}</div>
+</div>
+))}
+</div>
+<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16}}>
+<div style={{background:C.white,border:"1px solid "+C.border,borderRadius:10,padding:16}}>
+<h3 style={{margin:"0 0 10px",color:C.navy,fontSize:14}}>Recent Repairs</h3>
+{repairs.slice(-3).reverse().map(r=>(
+<div key={r.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid "+C.border}}>
+<div><div style={{fontWeight:600,fontSize:13}}>{r.title}</div><div style={{fontSize:11,color:C.muted}}>{propName(r.propertyId)}</div></div>
+<Pill label={r.status} fg={r.status==="Open"?C.red:r.status==="In Progress"?C.blue:C.green} bg="#f0f0f0"/>
+</div>
+))}
+</div>
+<div style={{background:C.white,border:"1px solid "+C.border,borderRadius:10,padding:16}}>
+<h3 style={{margin:"0 0 10px",color:C.navy,fontSize:14}}>Properties</h3>
+{properties.map(p=>(
+<div key={p.id} style={{padding:"8px 0",borderBottom:"1px solid "+C.border}}>
+<div style={{display:"flex",justifyContent:"space-between"}}>
+<div style={{fontWeight:600,fontSize:13}}>{p.address.split(",")[0]}</div>
+<div style={{fontWeight:700,color:C.green,fontSize:13}}>${p.rent.toLocaleString()}/mo</div>
+</div>
+<div style={{fontSize:11,color:C.muted}}>{p.tenant}</div>
+</div>
+))}
+</div>
+</div>
+</div>
+)}
+
+{tab==="Properties"&&(
+<div style={{display:"grid",gap:12}}>
+{properties.map(p=>(
+<div key={p.id} style={{background:C.white,border:"1px solid "+C.border,borderRadius:10,padding:18}}>
+<div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap"}}>
+<div><div style={{fontWeight:700,fontSize:15,color:C.navy}}>{p.address}</div><div style={{color:C.muted,fontSize:13}}>Tenant: {p.tenant}</div></div>
+<div style={{textAlign:"right"}}><div style={{fontWeight:700,color:C.green}}>${p.rent.toLocaleString()}/mo</div><div style={{fontSize:11,color:C.muted}}>Lease ends {p.leaseEnd}</div></div>
+</div>
+</div>
+))}
+</div>
+)}
+
+{tab==="Repairs"&&(
+<div style={{display:"grid",gap:12}}>
+{repairs.map(r=>(
+<div key={r.id} style={{background:C.white,border:"1px solid "+C.border,borderRadius:10,padding:16}}>
+<div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap"}}>
+<div><div style={{fontWeight:600,fontSize:14}}>{r.title}</div><div style={{fontSize:12,color:C.muted}}>{propName(r.propertyId)} · {r.date}</div></div>
+<div style={{display:"flex",gap:6}}>
+<Pill label={r.priority} fg={r.priority==="High"?C.red:C.accent} bg="#f0f0f0"/>
+<Pill label={r.status} fg={r.status==="Open"?C.red:r.status==="In Progress"?C.blue:C.green} bg="#f0f0f0"/>
+</div>
+</div>
+<div style={{display:"flex",justifyContent:"space-between",marginTop:10}}>
+<div style={{fontWeight:600,color:C.orange,fontSize:13}}>{r.cost>0?"$"+r.cost+" cost":"Cost TBD"}</div>
+{r.status==="Open"&&<button style={{...btnS,padding:"5px 10px",fontSize:12}} onClick={()=>updateRepairStatus(r.id,"In Progress")}>In Progress</button>}
+{r.status==="In Progress"&&<button style={{...btnS,padding:"5px 10px",fontSize:12}} onClick={()=>updateRepairStatus(r.id,"Resolved")}>Mark Resolved</button>}
+</div>
+</div>
+))}
+</div>
+)}
+
+{tab==="Rent History"&&(
+<div style={{background:C.white,border:"1px solid "+C.border,borderRadius:10,overflowX:"auto"}}>
+<table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+<thead><tr style={{background:C.navy}}>{["Property","Old Rent","New Rent","Change","Date","Reason"].map(h=><th key={h} style={{padding:10,textAlign:"left",color:"#8fa0c0",fontSize:11}}>{h}</th>)}</tr></thead>
+<tbody>
+{rentHistory.map(r=>{
+const inc=r.newRent-r.oldRent;
+return (
+<tr key={r.id}><td style={{padding:10}}>{propName(r.propertyId)}</td><td style={{padding:10}}>${r.oldRent}</td><td style={{padding:10,fontWeight:600,color:C.green}}>${r.newRent}</td><td style={{padding:10}}>+${inc}</td><td style={{padding:10}}>{r.effectiveDate}</td><td style={{padding:10}}>{r.reason}</td></tr>
+);
+})}
+</tbody>
+</table>
+</div>
+)}
+
+{tab==="Damage Log"&&(
+<div style={{display:"grid",gap:12}}>
+{damages.map(d=>(
+<div key={d.id} style={{background:C.white,border:"1px solid "+C.border,borderRadius:10,padding:16}}>
+<div style={{fontWeight:600,fontSize:14}}>{d.description}</div>
+<div style={{fontSize:12,color:C.muted,marginBottom:8}}>{propName(d.propertyId)} · {d.reportedDate}</div>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+<div style={{fontWeight:600,color:C.red}}>Est: ${d.estimatedCost}</div>
+<select value={d.status} onChange={e=>updateDamageStatus(d.id,e.target.value)} style={{...inp,width:"auto"}}>
+{["Pending","Deducted from deposit","Tenant paid","Disputed"].map(s=><option key={s}>{s}</option>)}
+</select>
+</div>
+</div>
+))}
+</div>
+)}
+
+</div>
+</div>modal==="property"&&(
+<Modal title="Add Property" onClose={closeModal}>
+<Field label="Address"><input style={inp} onChange={e=>setF("address",e.target.value)}/></Field>
+<Field label="Tenant Name"><input style={inp} onChange={e=>setF("tenant",e.target.value)}/></Field>
+<Field label="Monthly Rent"><input style={inp} type="number" onChange={e=>setF("rent",e.target.value)}/></Field>
+<Field label="Lease End Date"><input style={inp} type="date" onChange={e=>setF("leaseEnd",e.target.value)}/></Field>
+<div style={{display:"flex",gap:10,marginTop:16}}>
+<button style={btnP} onClick={addProperty}>Add</button>
+<button style={btnS} onClick={closeModal}>Cancel</button>
+</div>
+</Modal>
+)}
+
+{modal==="repair"&&(
+<Modal title="Log Repair" onClose={closeModal}>
+<Field label="Property">
+<select style={inp} onChange={e=>setF("propertyId",e.target.value)}>
+<option value="">Select…</option>
+{properties.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}
+</select>
+</Field>
+<Field label="Description"><input style={inp} onChange={e=>setF("title",e.target.value)}/></Field>
+<Field label="Priority">
+<select style={inp} onChange={e=>setF("priority",e.target.value)}>
+<option>Medium</option><option>High</option><option>Low</option>
+</select>
+</Field>
+<Field label="Cost"><input style={inp} type="number" onChange={e=>setF("cost",e.target.value)}/></Field>
+<Field label="Notes"><input style={inp} onChange={e=>setF("notes",e.target.value)}/></Field>
+<div style={{display:"flex",gap:10,marginTop:16}}>
+<button style={btnP} onClick={addRepair}>Log Repair</button>
+<button style={btnS} onClick={closeModal}>Cancel</button>
+</div>
+</Modal>
+)}
+
+{modal==="rent"&&(
+<Modal title="Rent Increase" onClose={closeModal}>
+<Field label="Property">
+<select style={inp} onChange={e=>setF("propertyId",e.target.value)}>
+<option value="">Select…</option>
+{properties.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}
+</select>
+</Field>
+<Field label="New Rent"><input style={inp} type="number" onChange={e=>setF("newRent",e.target.value)}/></Field>
+<Field label="Effective Date"><input style={inp} type="date" onChange={e=>setF("effectiveDate",e.target.value)}/></Field>
+<Field label="Reason"><input style={inp} onChange={e=>setF("reason",e.target.value)}/></Field>
+<div style={{display:"flex",gap:10,marginTop:16}}>
+<button style={btnP} onClick={addRentIncrease}>Save</button>
+<button style={btnS} onClick={closeModal}>Cancel</button>
+</div>
+</Modal>
+)}
+
+{modal==="damage"&&(
+<Modal title="Log Damage" onClose={closeModal}>
+<Field label="Property">
+<select style={inp} onChange={e=>setF("propertyId",e.target.value)}>
+<option value="">Select…</option>
+{properties.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}
+</select>
+</Field>
+<Field label="Description"><input style={inp} onChange={e=>setF("description",e.target.value)}/></Field>
+<Field label="Severity">
+<select style={inp} onChange={e=>setF("severity",e.target.value)}>
+<option>Minor</option><option>Moderate</option><option>Severe</option>
+</select>
+</Field>
+<Field label="Estimated Cost"><input style={inp} type="number" onChange={e=>setF("estimatedCost",e.target.value)}/></Field>
+<div style={{display:"flex",gap:10,marginTop:16}}>
+<button style={btnP} onClick={addDamage}>Log Damage</button>
+<button style={btnS} onClick={closeModal}>Cancel</button>
+</div>
+</Modal>
+)}
+
+</div>
+);
+}
+ReactDOM.render(<App/>, document.getElementById("root"));
+</script>
+</body>
+</html>
