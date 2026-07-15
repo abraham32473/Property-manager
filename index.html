@@ -152,6 +152,17 @@ setProperties(ps=>ps.map(p=>p.id===Number(form.propertyId)?{...p,rent:Number(for
 }
 closeModal();
 };
+
+const addDamage=async()=>{
+if(!form.propertyId||!form.description)return;
+const {data}=await sb.from("damages").insert({user_id:userId(),property_id:Number(form.propertyId),description:form.description,severity:form.severity||"Minor",estimated_cost:Number(form.estimatedCost)||0,status:"Pending"}).select();
+if(data)setDamages(d=>[...d,...data]);
+closeModal();
+};
+
+const updateRepairStatus=async(id,status)=>{
+await sb.from("repairs").update({status}).eq("id",id);
+setRepairs(rs=>rs.map(r=>r.id===id?{...r,status}:r));
 };
 
 const updateDamageStatus=async(id,status)=>{
@@ -317,13 +328,3 @@ ReactDOM.render(<App/>, document.getElementById("root"));
 </script>
 </body>
 </html>
-const addDamage=async()=>{
-if(!form.propertyId||!form.description)return;
-const {data}=await sb.from("damages").insert({user_id:userId(),property_id:Number(form.propertyId),description:form.description,severity:form.severity||"Minor",estimated_cost:Number(form.estimatedCost)||0,status:"Pending"}).select();
-if(data)setDamages(d=>[...d,...data]);
-closeModal();
-};
-
-const updateRepairStatus=async(id,status)=>{
-await sb.from("repairs").update({status}).eq("id",id);
-setRepairs(rs=>rs.map(r=>r.id===id
