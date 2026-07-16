@@ -32,6 +32,17 @@ const TRADES = ["Plumbing","Electrical","HVAC","Roofing","General","Landscaping"
 const inp = {width:"100%",padding:"8px",border:"1px solid #e2e6ef",borderRadius:6,fontSize:14,background:"#f7f8fc",boxSizing:"border-box",marginBottom:10};
 const btnP = {background:C.navy,color:"#fff",border:"none",borderRadius:6,padding:"9px 18px",fontWeight:600};
 const btnS = {background:"transparent",color:C.navy,border:"1px solid "+C.border,borderRadius:6,padding:"9px 18px",fontWeight:600};
+const btnDanger = {background:"transparent",color:C.red,border:"1px solid "+C.red,borderRadius:6,padding:"9px 18px",fontWeight:600};
+const btnDangerSm = {background:"transparent",color:C.red,border:"1px solid "+C.red,borderRadius:6,padding:"5px 10px",fontWeight:600,fontSize:12,cursor:"pointer"};
+
+// Extracts the storage object path from a Supabase public URL for the repair-photos bucket
+function extractStoragePath(url){
+if(!url)return null;
+const marker="/repair-photos/";
+const idx=url.indexOf(marker);
+if(idx===-1)return null;
+return url.slice(idx+marker.length);
+}
 
 function Modal({title,onClose,children}){
 return (
@@ -246,6 +257,72 @@ showErr(error);
 setDamages(ds=>ds.map(d=>d.id===id?{...d,status}:d));
 };
 
+// ---- DELETE FUNCTIONS ----
+
+const deleteProperty=async(p)=>{
+if(!window.confirm(`Delete property "${p.address}"?\n\nThis does not automatically delete related repairs, damages, rent history, or inspections for this property — you may want to remove those first.`))return;
+const {error}=await sb.from("properties").delete().eq("id",p.id);
+showErr(error);
+if(!error)setProperties(ps=>ps.filter(x=>x.id!==p.id));
+};
+
+const deleteRepair=async(r)=>{
+if(!window.confirm(`Delete repair "${r.title}"? This cannot be undone.`))return;
+if(r.photo_url){
+const path=extractStoragePath(r.photo_url);
+if(path)await sb.storage.from("repair-photos").remove([path]);
+}
+const {error}=await sb.from("repairs").delete().eq("id",r.id);
+showErr(error);
+if(!error)setRepairs(rs=>rs.filter(x=>x.id!==r.id));
+};
+
+const deleteRentRecord=async(r)=>{
+if(!window.confirm("Delete this rent history record?"))return;
+const {error}=await sb.from("rent_history").delete().eq("id",r.id);
+showErr(error);
+if(!error)setRentHistory(hs=>hs.filter(x=>x.id!==r.id));
+};
+
+const deleteDamage=async(d)=>{
+if(!window.confirm("Delete this damage record?"))return;
+const {error}=await sb.from("damages").delete().eq("id",d.id);
+showErr(error);
+if(!error)setDamages(ds=>ds.filter(x=>x.id!==d.id));
+};
+
+const deleteContractor=async(c)=>{
+if(!window.confirm(`Delete contractor "${c.name}"?`))return;
+const {error}=await sb.from("contractors").delete().eq("id",c.id);
+showErr(error);
+if(!error)setContractors(cs=>cs.filter(x=>x.id!==c.id));
+};
+
+const deleteInspection=async(insp)=>{
+if(!window.confirm(`Delete inspection "${insp.inspection_type}"? This will also delete all of its sections and photos.`))return;
+const paths=(insp.sections||[]).map(s=>extractStoragePath(s.photoUrl)).filter(Boolean);
+if(paths.length)await sb.storage.from("repair-photos").remove(paths);
+const {error}=await sb.from("inspections").delete().eq("id",insp.id);
+showErr(error);
+if(!error){
+setInspections(is=>is.filter(x=>x.id!==insp.id));
+if(viewInspection===insp.id)setViewInspection(null);
+}
+};
+
+const deleteInspectionSection=async(insp,index)=>{
+if(!window.confirm("Delete this section?"))return;
+const sec=insp.sections[index];
+if(sec.photoUrl){
+const path=extractStoragePath(sec.photoUrl);
+if(path)await sb.storage.from("repair-photos").remove([path]);
+}
+const newSections=insp.sections.filter((_,i)=>i!==index);
+const {error}=await sb.from("inspections").update({sections:newSections}).eq("id",insp.id);
+showErr(error);
+if(!error)setInspections(is=>is.map(i=>i.id===insp.id?{...i,sections:newSections}:i));
+};
+
 const propName=(id)=>{const p=properties.find(p=>p.id===id);return p?p.address.split(",")[0]:"Unknown";};
 const contractorName=(id)=>{const c=contractors.find(c=>c.id===Number(id));return c?`${c.name} (${c.phone})`:"—";};
 const contractorsForTrade=(trade)=>contractors.filter(c=>c.trade===trade);
@@ -316,9 +393,12 @@ return (
 )}
 
 {!loadingData&&tab==="Properties"&&(properties.length===0?<div style={{color:C.muted}}>No properties yet. Add your first one!</div>:properties.map(p=>(
-<div key={p.id} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10}}>
+<div key={p.id} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+<div>
 <div style={{fontWeight:700}}>{p.address}</div>
 <div style={{color:C.muted}}>Tenant: {p.tenant} — ${p.rent}/mo {p.lease_end?`— Lease ends ${p.lease_end}`:""}</div>
+</div>
+<button style={btnDangerSm} onClick={()=>deleteProperty(p)}>Delete</button>
 </div>
 )))}
 
@@ -333,20 +413,27 @@ return (
 {r.status==="Resolved"&&<span style={{color:C.green,fontSize:12}}>✓ Resolved</span>}
 <button style={{...btnS,padding:"5px 10px",fontSize:12}} onClick={()=>{setPrintRepair(r);setTimeout(()=>window.print(),100);}}>Print</button>
 <button style={{...btnS,padding:"5px 10px",fontSize:12}} onClick={()=>emailRepair(r)}>Email</button>
+<button style={btnDangerSm} onClick={()=>deleteRepair(r)}>Delete</button>
 </div>
 </div>
 )))}
 
 {!loadingData&&tab==="Rent History"&&(rentHistory.length===0?<div style={{color:C.muted}}>No rent changes recorded yet.</div>:rentHistory.map(r=>(
-<div key={r.id} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10}}>
+<div key={r.id} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+<div>
 <div style={{fontWeight:700}}>{propName(r.property_id)}</div>
 <div style={{color:C.muted}}>${r.old_rent} → ${r.new_rent} {r.effective_date?`(${r.effective_date})`:""} — {r.reason}</div>
+</div>
+<button style={btnDangerSm} onClick={()=>deleteRentRecord(r)}>Delete</button>
 </div>
 )))}
 
 {!loadingData&&tab==="Damage Log"&&(damages.length===0?<div style={{color:C.muted}}>No damage reports yet.</div>:damages.map(d=>(
 <div key={d.id} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
 <div style={{fontWeight:700}}>{d.description}</div>
+<button style={btnDangerSm} onClick={()=>deleteDamage(d)}>Delete</button>
+</div>
 <div style={{color:C.muted,marginBottom:8}}>{propName(d.property_id)} — {d.severity} — Est. ${d.estimated_cost}</div>
 <select value={d.status} onChange={e=>updateDamageStatus(d.id,e.target.value)} style={{...inp,width:"auto",marginBottom:0}}>
 <option>Pending</option><option>Deducted from deposit</option><option>Tenant paid</option><option>Disputed</option>
@@ -362,10 +449,13 @@ return (
 <div key={trade} style={{marginBottom:16}}>
 <h3 style={{color:C.navy,fontSize:15,marginBottom:8}}>{trade}</h3>
 {list.map(c=>(
-<div key={c.id} style={{background:"#fff",padding:14,borderRadius:10,border:"1px solid "+C.border,marginBottom:8}}>
+<div key={c.id} style={{background:"#fff",padding:14,borderRadius:10,border:"1px solid "+C.border,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+<div>
 <div style={{fontWeight:700}}>{c.name}</div>
 <div style={{color:C.muted,fontSize:13}}>{c.phone} {c.email?`— ${c.email}`:""}</div>
 {c.notes&&<div style={{color:C.muted,fontSize:12,marginTop:4}}>{c.notes}</div>}
+</div>
+<button style={btnDangerSm} onClick={()=>deleteContractor(c)}>Delete</button>
 </div>
 ))}
 </div>
@@ -377,9 +467,12 @@ return (
 {!loadingData&&tab==="Inspections"&&!viewInspection&&(inspections.length===0?<div style={{color:C.muted}}>No inspections yet.</div>:inspections.map(insp=>{
 const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
 return (
-<div key={insp.id} onClick={()=>setViewInspection(insp.id)} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10,cursor:"pointer"}}>
+<div key={insp.id} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+<div onClick={()=>setViewInspection(insp.id)} style={{cursor:"pointer",flex:1}}>
 <div style={{fontWeight:700}}>{insp.inspection_type} — {propName(insp.property_id)}</div>
 <div style={{color:C.muted}}>{insp.inspection_date} — {(insp.sections||[]).length} section(s) — Est. Total: ${total}</div>
+</div>
+<button style={btnDangerSm} onClick={(e)=>{e.stopPropagation();deleteInspection(insp);}}>Delete</button>
 </div>
 );
 }))}
@@ -390,12 +483,18 @@ if(!insp)return null;
 const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
 return (
 <div>
-<button style={{...btnS,marginBottom:16}} onClick={()=>setViewInspection(null)}>← Back to Inspections</button>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+<button style={btnS} onClick={()=>setViewInspection(null)}>← Back to Inspections</button>
+<button style={btnDangerSm} onClick={()=>deleteInspection(insp)}>Delete Entire Inspection</button>
+</div>
 <h2 style={{color:C.navy}}>{insp.inspection_type} — {propName(insp.property_id)}</h2>
 <div style={{color:C.muted,marginBottom:16}}>{insp.inspection_date} — Total Estimate: <strong style={{color:C.green}}>${total}</strong></div>
 {(insp.sections||[]).map((sec,i)=>(
 <div key={i} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
 <div style={{fontWeight:700}}>{sec.name}</div>
+<button style={btnDangerSm} onClick={()=>deleteInspectionSection(insp,i)}>Delete</button>
+</div>
 <div style={{color:C.muted,fontSize:13,marginBottom:6}}>Est. Cost: ${sec.cost} {sec.contractorId?`— ${contractorName(sec.contractorId)}`:""}</div>
 {sec.notes&&<div style={{fontSize:13,color:C.muted,marginBottom:6}}>{sec.notes}</div>}
 {sec.photoUrl&&<img src={sec.photoUrl} style={{maxWidth:200,borderRadius:6}}/>}
@@ -540,4 +639,4 @@ return (
 ReactDOM.render(<App/>, document.getElementById("root"));
 </script>
 </body>
-  </html>
+</html>
