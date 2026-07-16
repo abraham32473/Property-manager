@@ -11,6 +11,10 @@
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: Arial, sans-serif; background: #f7f8fc; }
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+}
 </style>
 </head>
 <body>
@@ -23,6 +27,8 @@ const SUPABASE_URL = "https://gistxdxxaehbekgivcks.supabase.co";
 const SUPABASE_KEY = "sb_publishable_S4PvtoVtTRQSxrMhpb5U5Q_4oUpqIcK";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+const TRADES = ["Plumbing","Electrical","HVAC","Roofing","General","Landscaping","Painting","Flooring","Appliance","Other"];
+
 const inp = {width:"100%",padding:"8px",border:"1px solid #e2e6ef",borderRadius:6,fontSize:14,background:"#f7f8fc",boxSizing:"border-box",marginBottom:10};
 const btnP = {background:C.navy,color:"#fff",border:"none",borderRadius:6,padding:"9px 18px",fontWeight:600};
 const btnS = {background:"transparent",color:C.navy,border:"1px solid "+C.border,borderRadius:6,padding:"9px 18px",fontWeight:600};
@@ -30,7 +36,7 @@ const btnS = {background:"transparent",color:C.navy,border:"1px solid "+C.border
 function Modal({title,onClose,children}){
 return (
 <div style={{position:"fixed",inset:0,background:"#0006",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
-<div style={{background:"#fff",borderRadius:12,padding:24,width:440,maxWidth:"92vw",maxHeight:"85vh",overflowY:"auto"}}>
+<div style={{background:"#fff",borderRadius:12,padding:24,width:460,maxWidth:"92vw",maxHeight:"85vh",overflowY:"auto"}}>
 <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}>
 <h3 style={{margin:0,color:C.navy}}>{title}</h3>
 <button onClick={onClose} style={{background:"none",border:"none",fontSize:22}}>×</button>
@@ -41,7 +47,7 @@ return (
 );
 }
 
-function AuthScreen({onAuth}){
+function AuthScreen(){
 const [mode,setMode]=useState("login");
 const [email,setEmail]=useState("");
 const [password,setPassword]=useState("");
@@ -54,10 +60,14 @@ setLoading(true);
 if(mode==="login"){
 const {error}=await sb.auth.signInWithPassword({email,password});
 if(error)setError(error.message);
-}else{
+}else if(mode==="signup"){
 const {error}=await sb.auth.signUp({email,password});
 if(error)setError(error.message);
 else setError("Account created! Check your email to confirm, then log in.");
+}else if(mode==="reset"){
+const {error}=await sb.auth.resetPasswordForEmail(email);
+if(error)setError(error.message);
+else setError("Password reset email sent! Check your inbox.");
 }
 setLoading(false);
 };
@@ -66,14 +76,18 @@ return (
 <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:C.bg}}>
 <div style={{background:"#fff",padding:32,borderRadius:12,width:360,maxWidth:"90vw",boxShadow:"0 4px 20px #0001"}}>
 <h2 style={{color:C.navy,marginBottom:4}}>PropTrack</h2>
-<div style={{color:C.muted,marginBottom:20,fontSize:14}}>{mode==="login"?"Log in to your account":"Create a new account"}</div>
+<div style={{color:C.muted,marginBottom:20,fontSize:14}}>{mode==="login"?"Log in to your account":mode==="signup"?"Create a new account":"Reset your password"}</div>
 <input style={inp} type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)}/>
-<input style={inp} type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)}/>
-{error&&<div style={{color:mode==="signup"&&error.includes("created")?C.green:C.red,fontSize:13,marginBottom:10}}>{error}</div>}
-<button style={{...btnP,width:"100%",marginBottom:10}} onClick={submit} disabled={loading}>{loading?"Please wait...":mode==="login"?"Log In":"Sign Up"}</button>
+{mode!=="reset"&&<input style={inp} type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)}/>}
+{error&&<div style={{color:(error.includes("created")||error.includes("sent"))?C.green:C.red,fontSize:13,marginBottom:10}}>{error}</div>}
+<button style={{...btnP,width:"100%",marginBottom:10}} onClick={submit} disabled={loading}>{loading?"Please wait...":mode==="login"?"Log In":mode==="signup"?"Sign Up":"Send Reset Email"}</button>
 <div style={{textAlign:"center",fontSize:13,color:C.muted}}>
-{mode==="login"?"Don't have an account? ":"Already have an account? "}
-<span style={{color:C.blue,cursor:"pointer"}} onClick={()=>{setMode(mode==="login"?"signup":"login");setError("");}}>{mode==="login"?"Sign up":"Log in"}</span>
+{mode==="login"&&(<React.Fragment>
+Don't have an account? <span style={{color:C.blue,cursor:"pointer"}} onClick={()=>{setMode("signup");setError("");}}>Sign up</span>
+<div style={{marginTop:8}}><span style={{color:C.blue,cursor:"pointer"}} onClick={()=>{setMode("reset");setError("");}}>Forgot password?</span></div>
+</React.Fragment>)}
+{mode==="signup"&&<span>Already have an account? <span style={{color:C.blue,cursor:"pointer"}} onClick={()=>{setMode("login");setError("");}}>Log in</span></span>}
+{mode==="reset"&&<span style={{color:C.blue,cursor:"pointer"}} onClick={()=>{setMode("login");setError("");}}>Back to login</span>}
 </div>
 </div>
 </div>
@@ -88,9 +102,13 @@ const [properties,setProperties]=useState([]);
 const [repairs,setRepairs]=useState([]);
 const [rentHistory,setRentHistory]=useState([]);
 const [damages,setDamages]=useState([]);
+const [contractors,setContractors]=useState([]);
+const [inspections,setInspections]=useState([]);
 const [modal,setModal]=useState(null);
 const [form,setForm]=useState({});
 const [loadingData,setLoadingData]=useState(false);
+const [viewInspection,setViewInspection]=useState(null);
+const [printRepair,setPrintRepair]=useState(null);
 
 useEffect(()=>{
 sb.auth.getSession().then(({data})=>{
@@ -109,16 +127,20 @@ if(session)loadAllData();
 
 const loadAllData=async()=>{
 setLoadingData(true);
-const [p,r,rh,d]=await Promise.all([
+const [p,r,rh,d,c,ins]=await Promise.all([
 sb.from("properties").select("*").order("id"),
 sb.from("repairs").select("*").order("id"),
 sb.from("rent_history").select("*").order("id"),
 sb.from("damages").select("*").order("id"),
+sb.from("contractors").select("*").order("id"),
+sb.from("inspections").select("*").order("id"),
 ]);
 if(p.data)setProperties(p.data);
 if(r.data)setRepairs(r.data);
 if(rh.data)setRentHistory(rh.data);
 if(d.data)setDamages(d.data);
+if(c.data)setContractors(c.data);
+if(ins.data)setInspections(ins.data);
 setLoadingData(false);
 };
 
@@ -127,16 +149,31 @@ const closeModal=()=>{setModal(null);setForm({});};
 const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
 const userId=()=>session.user.id;
 
+const showErr=(error)=>{
+if(error)alert("Something went wrong: "+error.message);
+};
+
 const addProperty=async()=>{
 if(!form.address||!form.tenant)return;
 const {data,error}=await sb.from("properties").insert({user_id:userId(),address:form.address,tenant:form.tenant,rent:Number(form.rent)||0,lease_end:form.leaseEnd||null}).select();
+showErr(error);
 if(data)setProperties(p=>[...p,...data]);
 closeModal();
 };
 
 const addRepair=async()=>{
 if(!form.title||!form.propertyId)return;
-const {data}=await sb.from("repairs").insert({user_id:userId(),property_id:Number(form.propertyId),title:form.title,priority:form.priority||"Medium",status:"Open",cost:Number(form.cost)||0,notes:form.notes||""}).select();
+let photoUrl=null;
+if(form.photoFile){
+const fileName=`${userId()}/${Date.now()}_${form.photoFile.name}`;
+const {data:up,error:upErr}=await sb.storage.from("repair-photos").upload(fileName,form.photoFile);
+if(!upErr){
+const {data:urlData}=sb.storage.from("repair-photos").getPublicUrl(fileName);
+photoUrl=urlData.publicUrl;
+}
+}
+const {data,error}=await sb.from("repairs").insert({user_id:userId(),property_id:Number(form.propertyId),title:form.title,priority:form.priority||"Medium",status:"Open",cost:Number(form.cost)||0,notes:form.notes||"",trade:form.trade||"General",photo_url:photoUrl}).select();
+showErr(error);
 if(data)setRepairs(r=>[...r,...data]);
 closeModal();
 };
@@ -144,7 +181,8 @@ closeModal();
 const addRentIncrease=async()=>{
 if(!form.propertyId||!form.newRent)return;
 const prop=properties.find(p=>p.id===Number(form.propertyId));
-const {data}=await sb.from("rent_history").insert({user_id:userId(),property_id:Number(form.propertyId),old_rent:prop?prop.rent:0,new_rent:Number(form.newRent),effective_date:form.effectiveDate||null,reason:form.reason||""}).select();
+const {data,error}=await sb.from("rent_history").insert({user_id:userId(),property_id:Number(form.propertyId),old_rent:prop?prop.rent:0,new_rent:Number(form.newRent),effective_date:form.effectiveDate||null,reason:form.reason||""}).select();
+showErr(error);
 if(data){
 setRentHistory(h=>[...h,...data]);
 await sb.from("properties").update({rent:Number(form.newRent)}).eq("id",Number(form.propertyId));
@@ -155,26 +193,72 @@ closeModal();
 
 const addDamage=async()=>{
 if(!form.propertyId||!form.description)return;
-const {data}=await sb.from("damages").insert({user_id:userId(),property_id:Number(form.propertyId),description:form.description,severity:form.severity||"Minor",estimated_cost:Number(form.estimatedCost)||0,status:"Pending"}).select();
+const {data,error}=await sb.from("damages").insert({user_id:userId(),property_id:Number(form.propertyId),description:form.description,severity:form.severity||"Minor",estimated_cost:Number(form.estimatedCost)||0,status:"Pending"}).select();
+showErr(error);
 if(data)setDamages(d=>[...d,...data]);
 closeModal();
 };
 
+const addContractor=async()=>{
+if(!form.name||!form.trade)return;
+const {data,error}=await sb.from("contractors").insert({user_id:userId(),name:form.name,trade:form.trade,phone:form.phone||"",email:form.cemail||"",notes:form.cnotes||""}).select();
+showErr(error);
+if(data)setContractors(c=>[...c,...data]);
+closeModal();
+};
+
+const addInspection=async()=>{
+if(!form.propertyId||!form.inspectionType)return;
+const {data,error}=await sb.from("inspections").insert({user_id:userId(),property_id:Number(form.propertyId),inspection_type:form.inspectionType,inspection_date:new Date().toISOString().slice(0,10),sections:[]}).select();
+showErr(error);
+if(data)setInspections(i=>[...i,...data]);
+closeModal();
+};
+
+const addInspectionSection=async(inspectionId)=>{
+if(!form.sectionName)return;
+const insp=inspections.find(i=>i.id===inspectionId);
+let photoUrl=null;
+if(form.sectionPhoto){
+const fileName=`${userId()}/${Date.now()}_${form.sectionPhoto.name}`;
+const {error:upErr}=await sb.storage.from("repair-photos").upload(fileName,form.sectionPhoto);
+if(!upErr){
+const {data:urlData}=sb.storage.from("repair-photos").getPublicUrl(fileName);
+photoUrl=urlData.publicUrl;
+}
+}
+const newSections=[...(insp.sections||[]),{name:form.sectionName,cost:Number(form.sectionCost)||0,contractorId:form.sectionContractor||null,photoUrl,notes:form.sectionNotes||""}];
+const {error}=await sb.from("inspections").update({sections:newSections}).eq("id",inspectionId);
+showErr(error);
+setInspections(insps=>insps.map(i=>i.id===inspectionId?{...i,sections:newSections}:i));
+setForm({});
+};
+
 const updateRepairStatus=async(id,status)=>{
-await sb.from("repairs").update({status}).eq("id",id);
+const {error}=await sb.from("repairs").update({status}).eq("id",id);
+showErr(error);
 setRepairs(rs=>rs.map(r=>r.id===id?{...r,status}:r));
 };
 
 const updateDamageStatus=async(id,status)=>{
-await sb.from("damages").update({status}).eq("id",id);
+const {error}=await sb.from("damages").update({status}).eq("id",id);
+showErr(error);
 setDamages(ds=>ds.map(d=>d.id===id?{...d,status}:d));
 };
 
 const propName=(id)=>{const p=properties.find(p=>p.id===id);return p?p.address.split(",")[0]:"Unknown";};
+const contractorName=(id)=>{const c=contractors.find(c=>c.id===Number(id));return c?`${c.name} (${c.phone})`:"—";};
+const contractorsForTrade=(trade)=>contractors.filter(c=>c.trade===trade);
 const openRepairs=repairs.filter(r=>r.status!=="Resolved").length;
 const monthlyRent=properties.reduce((s,p)=>s+Number(p.rent),0);
 
 const logout=async()=>{await sb.auth.signOut();};
+
+const emailRepair=(r)=>{
+const subject=encodeURIComponent(`Repair Request: ${r.title}`);
+const body=encodeURIComponent(`Property: ${propName(r.property_id)}\nIssue: ${r.title}\nPriority: ${r.priority}\nTrade: ${r.trade||"General"}\nNotes: ${r.notes||"None"}\n${r.photo_url?"Photo: "+r.photo_url:""}`);
+window.location.href=`mailto:?subject=${subject}&body=${body}`;
+};
 
 if(checkingSession){
 return <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",color:C.muted}}>Loading...</div>;
@@ -184,24 +268,28 @@ if(!session){
 return <AuthScreen/>;
 }
 
+const TABS=["Dashboard","Properties","Repairs","Rent History","Damage Log","Inspections","Contractors"];
+
 return (
 <div style={{display:"flex",minHeight:"100vh"}}>
-<div style={{width:200,background:C.navy,padding:20,color:"#fff",flexShrink:0,display:"flex",flexDirection:"column"}}>
+<div className="no-print" style={{width:200,background:C.navy,padding:20,color:"#fff",flexShrink:0,display:"flex",flexDirection:"column"}}>
 <h2 style={{fontSize:18,marginBottom:20}}>PropTrack</h2>
-{["Dashboard","Properties","Repairs","Rent History","Damage Log"].map(t=>(
-<div key={t} onClick={()=>setTab(t)} style={{padding:"10px 0",cursor:"pointer",color:tab===t?C.accent:"#fff"}}>{t}</div>
+{TABS.map(t=>(
+<div key={t} onClick={()=>{setTab(t);setViewInspection(null);}} style={{padding:"10px 0",cursor:"pointer",color:tab===t?C.accent:"#fff",fontSize:14}}>{t}</div>
 ))}
 <div style={{flex:1}}></div>
 <div style={{fontSize:12,color:"#8fa0c0",marginBottom:8,wordBreak:"break-all"}}>{session.user.email}</div>
 <button style={{...btnS,color:"#fff",borderColor:"#3a4a6b",fontSize:13,padding:"6px 12px"}} onClick={logout}>Log Out</button>
 </div>
 <div style={{flex:1,padding:24}}>
-<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+<div className="no-print" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
 <h1 style={{color:C.navy}}>{tab}</h1>
 {tab==="Properties"&&<button style={btnP} onClick={()=>openModal("property")}>+ Add Property</button>}
 {tab==="Repairs"&&<button style={btnP} onClick={()=>openModal("repair")}>+ Log Repair</button>}
 {tab==="Rent History"&&<button style={btnP} onClick={()=>openModal("rent")}>+ Rent Increase</button>}
 {tab==="Damage Log"&&<button style={btnP} onClick={()=>openModal("damage")}>+ Log Damage</button>}
+{tab==="Contractors"&&<button style={btnP} onClick={()=>openModal("contractor")}>+ Add Contractor</button>}
+{tab==="Inspections"&&!viewInspection&&<button style={btnP} onClick={()=>openModal("inspection")}>+ New Inspection</button>}
 </div>
 
 {loadingData&&<div style={{color:C.muted}}>Loading your data...</div>}
@@ -216,6 +304,14 @@ return (
 <div style={{fontSize:12,color:C.muted}}>Open Repairs</div>
 <div style={{fontSize:24,fontWeight:700,color:C.red}}>{openRepairs}</div>
 </div>
+<div style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border}}>
+<div style={{fontSize:12,color:C.muted}}>Contractors</div>
+<div style={{fontSize:24,fontWeight:700,color:C.blue}}>{contractors.length}</div>
+</div>
+<div style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border}}>
+<div style={{fontSize:12,color:C.muted}}>Inspections</div>
+<div style={{fontSize:24,fontWeight:700,color:C.orange}}>{inspections.length}</div>
+</div>
 </div>
 )}
 
@@ -229,10 +325,15 @@ return (
 {!loadingData&&tab==="Repairs"&&(repairs.length===0?<div style={{color:C.muted}}>No repairs logged yet.</div>:repairs.map(r=>(
 <div key={r.id} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10}}>
 <div style={{fontWeight:700}}>{r.title}</div>
-<div style={{color:C.muted,marginBottom:8}}>{propName(r.property_id)} — {r.priority} priority — {r.status}</div>
+<div style={{color:C.muted,marginBottom:8}}>{propName(r.property_id)} — {r.trade||"General"} — {r.priority} priority — {r.status}</div>
+{r.photo_url&&<img src={r.photo_url} style={{maxWidth:150,borderRadius:6,marginBottom:8,display:"block"}}/>}
+<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
 {r.status==="Open"&&<button style={{...btnS,padding:"5px 10px",fontSize:12}} onClick={()=>updateRepairStatus(r.id,"In Progress")}>Mark In Progress</button>}
 {r.status==="In Progress"&&<button style={{...btnS,padding:"5px 10px",fontSize:12}} onClick={()=>updateRepairStatus(r.id,"Resolved")}>Mark Resolved</button>}
 {r.status==="Resolved"&&<span style={{color:C.green,fontSize:12}}>✓ Resolved</span>}
+<button style={{...btnS,padding:"5px 10px",fontSize:12}} onClick={()=>{setPrintRepair(r);setTimeout(()=>window.print(),100);}}>Print</button>
+<button style={{...btnS,padding:"5px 10px",fontSize:12}} onClick={()=>emailRepair(r)}>Email</button>
+</div>
 </div>
 )))}
 
@@ -253,7 +354,83 @@ return (
 </div>
 )))}
 
+{!loadingData&&tab==="Contractors"&&(
+TRADES.map(trade=>{
+const list=contractorsForTrade(trade);
+if(list.length===0)return null;
+return (
+<div key={trade} style={{marginBottom:16}}>
+<h3 style={{color:C.navy,fontSize:15,marginBottom:8}}>{trade}</h3>
+{list.map(c=>(
+<div key={c.id} style={{background:"#fff",padding:14,borderRadius:10,border:"1px solid "+C.border,marginBottom:8}}>
+<div style={{fontWeight:700}}>{c.name}</div>
+<div style={{color:C.muted,fontSize:13}}>{c.phone} {c.email?`— ${c.email}`:""}</div>
+{c.notes&&<div style={{color:C.muted,fontSize:12,marginTop:4}}>{c.notes}</div>}
 </div>
+))}
+</div>
+);
+})
+)}
+{!loadingData&&tab==="Contractors"&&contractors.length===0&&<div style={{color:C.muted}}>No contractors added yet.</div>}
+
+{!loadingData&&tab==="Inspections"&&!viewInspection&&(inspections.length===0?<div style={{color:C.muted}}>No inspections yet.</div>:inspections.map(insp=>{
+const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
+return (
+<div key={insp.id} onClick={()=>setViewInspection(insp.id)} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10,cursor:"pointer"}}>
+<div style={{fontWeight:700}}>{insp.inspection_type} — {propName(insp.property_id)}</div>
+<div style={{color:C.muted}}>{insp.inspection_date} — {(insp.sections||[]).length} section(s) — Est. Total: ${total}</div>
+</div>
+);
+}))}
+
+{!loadingData&&tab==="Inspections"&&viewInspection&&(()=>{
+const insp=inspections.find(i=>i.id===viewInspection);
+if(!insp)return null;
+const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
+return (
+<div>
+<button style={{...btnS,marginBottom:16}} onClick={()=>setViewInspection(null)}>← Back to Inspections</button>
+<h2 style={{color:C.navy}}>{insp.inspection_type} — {propName(insp.property_id)}</h2>
+<div style={{color:C.muted,marginBottom:16}}>{insp.inspection_date} — Total Estimate: <strong style={{color:C.green}}>${total}</strong></div>
+{(insp.sections||[]).map((sec,i)=>(
+<div key={i} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10}}>
+<div style={{fontWeight:700}}>{sec.name}</div>
+<div style={{color:C.muted,fontSize:13,marginBottom:6}}>Est. Cost: ${sec.cost} {sec.contractorId?`— ${contractorName(sec.contractorId)}`:""}</div>
+{sec.notes&&<div style={{fontSize:13,color:C.muted,marginBottom:6}}>{sec.notes}</div>}
+{sec.photoUrl&&<img src={sec.photoUrl} style={{maxWidth:200,borderRadius:6}}/>}
+</div>
+))}
+<div style={{background:"#fff",padding:16,borderRadius:10,border:"1px dashed "+C.border,marginTop:16}}>
+<h4 style={{marginBottom:10,color:C.navy}}>Add Section</h4>
+<input style={inp} placeholder="Section name (e.g. Roofing, Plumbing)" onChange={e=>setF("sectionName",e.target.value)}/>
+<input style={inp} type="number" placeholder="Estimated Cost" onChange={e=>setF("sectionCost",e.target.value)}/>
+<select style={inp} onChange={e=>setF("sectionContractor",e.target.value)}>
+<option value="">Assign Contractor (optional)</option>
+{contractors.map(c=><option key={c.id} value={c.id}>{c.name} — {c.trade}</option>)}
+</select>
+<input style={inp} placeholder="Notes" onChange={e=>setF("sectionNotes",e.target.value)}/>
+<input style={inp} type="file" accept="image/*" onChange={e=>setF("sectionPhoto",e.target.files[0])}/>
+<button style={btnP} onClick={()=>addInspectionSection(insp.id)}>Add Section</button>
+</div>
+</div>
+);
+})()}
+
+</div>
+
+{printRepair&&(
+<div style={{position:"fixed",inset:0,background:"#fff",zIndex:200,padding:30}}>
+<button className="no-print" style={{...btnS,marginBottom:16}} onClick={()=>setPrintRepair(null)}>Close</button>
+<h2>Repair Request</h2>
+<p><strong>Property:</strong> {propName(printRepair.property_id)}</p>
+<p><strong>Issue:</strong> {printRepair.title}</p>
+<p><strong>Trade:</strong> {printRepair.trade||"General"}</p>
+<p><strong>Priority:</strong> {printRepair.priority}</p>
+<p><strong>Notes:</strong> {printRepair.notes||"None"}</p>
+{printRepair.photo_url&&<img src={printRepair.photo_url} style={{maxWidth:300,marginTop:10}}/>}
+</div>
+)}
 
 {modal==="property"&&(
 <Modal title="Add Property" onClose={closeModal}>
@@ -275,11 +452,16 @@ return (
 {properties.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}
 </select>
 <input style={inp} placeholder="Description" onChange={e=>setF("title",e.target.value)}/>
+<select style={inp} onChange={e=>setF("trade",e.target.value)}>
+<option value="">Select Trade…</option>
+{TRADES.map(t=><option key={t} value={t}>{t}</option>)}
+</select>
 <select style={inp} onChange={e=>setF("priority",e.target.value)}>
 <option>Medium</option><option>High</option><option>Low</option>
 </select>
 <input style={inp} type="number" placeholder="Cost" onChange={e=>setF("cost",e.target.value)}/>
 <input style={inp} placeholder="Notes" onChange={e=>setF("notes",e.target.value)}/>
+<input style={inp} type="file" accept="image/*" onChange={e=>setF("photoFile",e.target.files[0])}/>
 <div style={{display:"flex",gap:10}}>
 <button style={btnP} onClick={addRepair}>Log Repair</button>
 <button style={btnS} onClick={closeModal}>Cancel</button>
@@ -321,10 +503,41 @@ return (
 </Modal>
 )}
 
+{modal==="contractor"&&(
+<Modal title="Add Contractor" onClose={closeModal}>
+<input style={inp} placeholder="Name" onChange={e=>setF("name",e.target.value)}/>
+<select style={inp} onChange={e=>setF("trade",e.target.value)}>
+<option value="">Select Trade…</option>
+{TRADES.map(t=><option key={t} value={t}>{t}</option>)}
+</select>
+<input style={inp} placeholder="Phone" onChange={e=>setF("phone",e.target.value)}/>
+<input style={inp} placeholder="Email" onChange={e=>setF("cemail",e.target.value)}/>
+<input style={inp} placeholder="Notes" onChange={e=>setF("cnotes",e.target.value)}/>
+<div style={{display:"flex",gap:10}}>
+<button style={btnP} onClick={addContractor}>Add</button>
+<button style={btnS} onClick={closeModal}>Cancel</button>
+</div>
+</Modal>
+)}
+
+{modal==="inspection"&&(
+<Modal title="New Inspection" onClose={closeModal}>
+<select style={inp} onChange={e=>setF("propertyId",e.target.value)}>
+<option value="">Select property…</option>
+{properties.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}
+</select>
+<input style={inp} placeholder="Inspection Type (e.g. Move-in, New Acquisition)" onChange={e=>setF("inspectionType",e.target.value)}/>
+<div style={{display:"flex",gap:10}}>
+<button style={btnP} onClick={addInspection}>Create</button>
+<button style={btnS} onClick={closeModal}>Cancel</button>
+</div>
+</Modal>
+)}
+
 </div>
 );
 }
 ReactDOM.render(<App/>, document.getElementById("root"));
 </script>
 </body>
-</html>
+  </html>
