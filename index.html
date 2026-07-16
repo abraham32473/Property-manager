@@ -396,7 +396,7 @@ const fullAddress=prop?prop.address:"Unknown property";
 const subject=encodeURIComponent(`${insp.inspection_type} Inspection Report — ${propName(insp.property_id)}`);
 const html=buildInspectionReportHtml(insp,fullAddress,contractorName);
 const fileName=`${userId()}/reports/${Date.now()}_inspection_${insp.id}.html`;
-const {error:upErr}=await sb.storage.from("repair-photos").upload(fileName,new Blob([html],{type:"text/html"}));
+const {error:upErr}=await sb.storage.from("repair-photos").upload(fileName,new Blob([html],{type:"text/html"}),{contentType:"text/html"});
 if(upErr){
 alert("Couldn't generate the hosted report link ("+upErr.message+"). Falling back to a plain-text email instead.");
 const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
