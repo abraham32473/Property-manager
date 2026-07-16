@@ -120,6 +120,7 @@ const [form,setForm]=useState({});
 const [loadingData,setLoadingData]=useState(false);
 const [viewInspection,setViewInspection]=useState(null);
 const [printRepair,setPrintRepair]=useState(null);
+const [printInspection,setPrintInspection]=useState(null);
 
 useEffect(()=>{
 sb.auth.getSession().then(({data})=>{
@@ -337,6 +338,19 @@ const body=encodeURIComponent(`Property: ${propName(r.property_id)}\nIssue: ${r.
 window.location.href=`mailto:?subject=${subject}&body=${body}`;
 };
 
+const emailInspection=(insp)=>{
+const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
+const subject=encodeURIComponent(`Inspection Report: ${insp.inspection_type} — ${propName(insp.property_id)}`);
+const sectionLines=(insp.sections||[]).map(sec=>{
+const contractorLine=sec.contractorId?` — ${contractorName(sec.contractorId)}`:"";
+const notesLine=sec.notes?`\n  Notes: ${sec.notes}`:"";
+const photoLine=sec.photoUrl?`\n  Photo: ${sec.photoUrl}`:"";
+return `- ${sec.name}: $${sec.cost}${contractorLine}${notesLine}${photoLine}`;
+}).join("\n");
+const body=encodeURIComponent(`Property: ${propName(insp.property_id)}\nInspection Type: ${insp.inspection_type}\nDate: ${insp.inspection_date}\n\nSections:\n${sectionLines||"None"}\n\nTotal Estimate: $${total}`);
+window.location.href=`mailto:?subject=${subject}&body=${body}`;
+};
+
 if(checkingSession){
 return <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",color:C.muted}}>Loading...</div>;
 }
@@ -467,12 +481,16 @@ return (
 {!loadingData&&tab==="Inspections"&&!viewInspection&&(inspections.length===0?<div style={{color:C.muted}}>No inspections yet.</div>:inspections.map(insp=>{
 const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
 return (
-<div key={insp.id} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
-<div onClick={()=>setViewInspection(insp.id)} style={{cursor:"pointer",flex:1}}>
+<div key={insp.id} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+<div onClick={()=>setViewInspection(insp.id)} style={{cursor:"pointer",flex:1,minWidth:180}}>
 <div style={{fontWeight:700}}>{insp.inspection_type} — {propName(insp.property_id)}</div>
 <div style={{color:C.muted}}>{insp.inspection_date} — {(insp.sections||[]).length} section(s) — Est. Total: ${total}</div>
 </div>
+<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+<button style={{...btnS,padding:"5px 10px",fontSize:12}} onClick={(e)=>{e.stopPropagation();setPrintInspection(insp);setTimeout(()=>window.print(),100);}}>Print</button>
+<button style={{...btnS,padding:"5px 10px",fontSize:12}} onClick={(e)=>{e.stopPropagation();emailInspection(insp);}}>Email</button>
 <button style={btnDangerSm} onClick={(e)=>{e.stopPropagation();deleteInspection(insp);}}>Delete</button>
+</div>
 </div>
 );
 }))}
@@ -485,7 +503,11 @@ return (
 <div>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
 <button style={btnS} onClick={()=>setViewInspection(null)}>← Back to Inspections</button>
+<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+<button style={{...btnS,padding:"9px 14px"}} onClick={()=>{setPrintInspection(insp);setTimeout(()=>window.print(),100);}}>Print</button>
+<button style={{...btnS,padding:"9px 14px"}} onClick={()=>emailInspection(insp)}>Email</button>
 <button style={btnDangerSm} onClick={()=>deleteInspection(insp)}>Delete Entire Inspection</button>
+</div>
 </div>
 <h2 style={{color:C.navy}}>{insp.inspection_type} — {propName(insp.property_id)}</h2>
 <div style={{color:C.muted,marginBottom:16}}>{insp.inspection_date} — Total Estimate: <strong style={{color:C.green}}>${total}</strong></div>
@@ -530,6 +552,28 @@ return (
 {printRepair.photo_url&&<img src={printRepair.photo_url} style={{maxWidth:300,marginTop:10}}/>}
 </div>
 )}
+
+{printInspection&&(()=>{
+const total=(printInspection.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
+return (
+<div style={{position:"fixed",inset:0,background:"#fff",zIndex:200,padding:30,overflowY:"auto"}}>
+<button className="no-print" style={{...btnS,marginBottom:16}} onClick={()=>setPrintInspection(null)}>Close</button>
+<h2>Inspection Report</h2>
+<p><strong>Property:</strong> {propName(printInspection.property_id)}</p>
+<p><strong>Inspection Type:</strong> {printInspection.inspection_type}</p>
+<p><strong>Date:</strong> {printInspection.inspection_date}</p>
+<p style={{marginBottom:14}}><strong>Total Estimate:</strong> ${total}</p>
+{(printInspection.sections||[]).length===0&&<p>No sections recorded.</p>}
+{(printInspection.sections||[]).map((sec,i)=>(
+<div key={i} style={{marginBottom:16,paddingBottom:12,borderBottom:"1px solid #ddd"}}>
+<p><strong>{sec.name}</strong> — ${sec.cost}{sec.contractorId?` — ${contractorName(sec.contractorId)}`:""}</p>
+{sec.notes&&<p>Notes: {sec.notes}</p>}
+{sec.photoUrl&&<img src={sec.photoUrl} style={{maxWidth:250,marginTop:6}}/>}
+</div>
+))}
+</div>
+);
+})()}
 
 {modal==="property"&&(
 <Modal title="Add Property" onClose={closeModal}>
