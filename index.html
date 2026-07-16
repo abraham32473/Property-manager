@@ -44,6 +44,58 @@ if(idx===-1)return null;
 return url.slice(idx+marker.length);
 }
 
+// Basic HTML-escaping so user-entered text can't break the generated report page
+function escapeHtml(str){
+if(str===null||str===undefined)return "";
+return String(str).replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+// Builds a standalone, styled HTML report page for an inspection (letterhead + sections + photos)
+function buildInspectionReportHtml(insp,propertyAddress,contractorNameFn){
+const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
+const sectionsHtml=(insp.sections||[]).length===0
+?`<p style="color:#6b7a99;">No sections recorded.</p>`
+:(insp.sections||[]).map(sec=>`
+<div style="background:#fff;border:1px solid #e2e6ef;border-radius:10px;padding:16px;margin-bottom:14px;">
+<div style="display:flex;justify-content:space-between;align-items:baseline;">
+<strong style="font-size:16px;color:#1a2744;">${escapeHtml(sec.name)}</strong>
+<span style="color:#2e7d32;font-weight:700;">$${escapeHtml(sec.cost)}</span>
+</div>
+${sec.contractorId?`<p style="color:#6b7a99;font-size:13px;margin-top:6px;">Contractor: ${escapeHtml(contractorNameFn(sec.contractorId))}</p>`:""}
+${sec.notes?`<p style="font-size:13px;margin-top:6px;">${escapeHtml(sec.notes)}</p>`:""}
+${sec.photoUrl?`<img src="${sec.photoUrl}" style="max-width:100%;border-radius:8px;margin-top:10px;display:block;"/>`:""}
+</div>
+`).join("");
+return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>${escapeHtml(insp.inspection_type)} Inspection Report</title>
+<style>
+body{font-family:Arial,sans-serif;background:#f7f8fc;margin:0;padding:0;color:#1a2744;}
+.wrap{max-width:640px;margin:0 auto;padding:30px 20px;}
+.letterhead{text-align:center;border-bottom:2px solid #1a2744;padding-bottom:16px;margin-bottom:24px;}
+.letterhead h1{font-size:22px;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px;}
+.letterhead .address{font-size:16px;color:#6b7a99;}
+.meta{color:#6b7a99;font-size:14px;margin-bottom:20px;}
+.total{font-size:16px;margin-bottom:20px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="letterhead">
+<h1>${escapeHtml(insp.inspection_type)} Inspection Report</h1>
+<div class="address">${escapeHtml(propertyAddress)}</div>
+</div>
+<div class="meta">Inspection Date: ${escapeHtml(insp.inspection_date)}</div>
+<div class="total"><strong>Total Estimate:</strong> $${total}</div>
+${sectionsHtml}
+</div>
+</body>
+</html>`;
+}
+
 function Modal({title,onClose,children}){
 return (
 <div style={{position:"fixed",inset:0,background:"#0006",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -338,16 +390,29 @@ const body=encodeURIComponent(`Property: ${propName(r.property_id)}\nIssue: ${r.
 window.location.href=`mailto:?subject=${subject}&body=${body}`;
 };
 
-const emailInspection=(insp)=>{
+const emailInspection=async(insp)=>{
+const prop=properties.find(p=>p.id===insp.property_id);
+const fullAddress=prop?prop.address:"Unknown property";
+const subject=encodeURIComponent(`${insp.inspection_type} Inspection Report — ${propName(insp.property_id)}`);
+const html=buildInspectionReportHtml(insp,fullAddress,contractorName);
+const fileName=`${userId()}/reports/${Date.now()}_inspection_${insp.id}.html`;
+const {error:upErr}=await sb.storage.from("repair-photos").upload(fileName,new Blob([html],{type:"text/html"}));
+if(upErr){
+alert("Couldn't generate the hosted report link ("+upErr.message+"). Falling back to a plain-text email instead.");
 const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
-const subject=encodeURIComponent(`Inspection Report: ${insp.inspection_type} — ${propName(insp.property_id)}`);
 const sectionLines=(insp.sections||[]).map(sec=>{
 const contractorLine=sec.contractorId?` — ${contractorName(sec.contractorId)}`:"";
 const notesLine=sec.notes?`\n  Notes: ${sec.notes}`:"";
 const photoLine=sec.photoUrl?`\n  Photo: ${sec.photoUrl}`:"";
 return `- ${sec.name}: $${sec.cost}${contractorLine}${notesLine}${photoLine}`;
 }).join("\n");
-const body=encodeURIComponent(`Property: ${propName(insp.property_id)}\nInspection Type: ${insp.inspection_type}\nDate: ${insp.inspection_date}\n\nSections:\n${sectionLines||"None"}\n\nTotal Estimate: $${total}`);
+const body=encodeURIComponent(`Property: ${fullAddress}\nInspection Type: ${insp.inspection_type}\nDate: ${insp.inspection_date}\n\nSections:\n${sectionLines||"None"}\n\nTotal Estimate: $${total}`);
+window.location.href=`mailto:?subject=${subject}&body=${body}`;
+return;
+}
+const {data:urlData}=sb.storage.from("repair-photos").getPublicUrl(fileName);
+const reportUrl=urlData.publicUrl;
+const body=encodeURIComponent(`Here is the ${insp.inspection_type} inspection report for ${fullAddress}:\n\n${reportUrl}`);
 window.location.href=`mailto:?subject=${subject}&body=${body}`;
 };
 
@@ -555,14 +620,17 @@ return (
 
 {printInspection&&(()=>{
 const total=(printInspection.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
+const prop=properties.find(p=>p.id===printInspection.property_id);
+const fullAddress=prop?prop.address:propName(printInspection.property_id);
 return (
 <div style={{position:"fixed",inset:0,background:"#fff",zIndex:200,padding:30,overflowY:"auto"}}>
 <button className="no-print" style={{...btnS,marginBottom:16}} onClick={()=>setPrintInspection(null)}>Close</button>
-<h2>Inspection Report</h2>
-<p><strong>Property:</strong> {propName(printInspection.property_id)}</p>
-<p><strong>Inspection Type:</strong> {printInspection.inspection_type}</p>
-<p><strong>Date:</strong> {printInspection.inspection_date}</p>
-<p style={{marginBottom:14}}><strong>Total Estimate:</strong> ${total}</p>
+<div style={{textAlign:"center",borderBottom:"2px solid "+C.navy,paddingBottom:16,marginBottom:20}}>
+<h1 style={{fontSize:20,letterSpacing:0.5,textTransform:"uppercase",marginBottom:6}}>{printInspection.inspection_type} Inspection Report</h1>
+<div style={{fontSize:15,color:C.muted}}>{fullAddress}</div>
+</div>
+<p style={{color:C.muted,marginBottom:6}}>Inspection Date: {printInspection.inspection_date}</p>
+<p style={{marginBottom:16}}><strong>Total Estimate:</strong> ${total}</p>
 {(printInspection.sections||[]).length===0&&<p>No sections recorded.</p>}
 {(printInspection.sections||[]).map((sec,i)=>(
 <div key={i} style={{marginBottom:16,paddingBottom:12,borderBottom:"1px solid #ddd"}}>
