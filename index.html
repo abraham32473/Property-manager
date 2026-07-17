@@ -645,7 +645,18 @@ return (
 {contractors.map(c=><option key={c.id} value={c.id}>{c.name} — {c.trade}</option>)}
 </select>
 <input style={inp} placeholder="Notes" onChange={e=>setF("sectionNotes",e.target.value)}/>
+<label style={{fontSize:12,color:C.muted,display:"block",marginBottom:4}}>Photo</label>
+<div style={{display:"flex",gap:10,marginBottom:6}}>
+<div style={{flex:1}}>
+<div style={{fontSize:11,color:C.muted,marginBottom:4}}>Take Photo</div>
+<input style={inp} type="file" accept="image/*" capture="environment" onChange={e=>setF("sectionPhoto",e.target.files[0])}/>
+</div>
+<div style={{flex:1}}>
+<div style={{fontSize:11,color:C.muted,marginBottom:4}}>Choose from Gallery</div>
 <input style={inp} type="file" accept="image/*" onChange={e=>setF("sectionPhoto",e.target.files[0])}/>
+</div>
+</div>
+{form.sectionPhoto&&<div style={{fontSize:12,color:C.green,marginBottom:10}}>✓ Photo selected: {form.sectionPhoto.name}</div>}
 <button style={btnP} onClick={()=>addInspectionSection(insp.id)}>Add Section</button>
 </div>
 </div>
