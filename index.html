@@ -228,6 +228,21 @@ if(data)setProperties(p=>[...p,...data]);
 closeModal();
 };
 
+const openEditProperty=(p)=>{
+setForm({propId:p.id,address:p.address,tenant:p.tenant,rent:p.rent,leaseEnd:p.lease_end||""});
+setModal("editProperty");
+};
+
+const updateProperty=async()=>{
+if(!form.propId||!form.address||!form.tenant)return;
+const {error}=await sb.from("properties").update({address:form.address,tenant:form.tenant,rent:Number(form.rent)||0,lease_end:form.leaseEnd||null}).eq("id",form.propId);
+showErr(error);
+if(!error){
+setProperties(ps=>ps.map(p=>p.id===form.propId?{...p,address:form.address,tenant:form.tenant,rent:Number(form.rent)||0,lease_end:form.leaseEnd||null}:p));
+closeModal();
+}
+};
+
 const addRepair=async()=>{
 if(!form.title||!form.propertyId)return;
 let photoUrl=null;
@@ -420,7 +435,7 @@ const fullAddress=prop?prop.address:"Unknown property";
 const subject=encodeURIComponent(`${insp.inspection_type} Inspection Report — ${propName(insp.property_id)}`);
 const html=buildInspectionReportHtml(insp,fullAddress,contractorName);
 const fileName=`${userId()}/reports/${Date.now()}_inspection_${insp.id}.html`;
-const {error:upErr}=await sb.storage.from("repair-photos").upload(fileName,new Blob([html],{type:"text/html"}),{contentType:"text/html"});
+const {error:upErr}=await sb.storage.from("repair-photos").upload(fileName,new Blob([html],{type:"text/html"}),{contentType:"text/html",upsert:true});
 if(upErr){
 alert("Couldn't generate the hosted report link ("+upErr.message+"). Falling back to a plain-text email instead.");
 const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
@@ -502,7 +517,10 @@ return (
 <div style={{fontWeight:700}}>{p.address}</div>
 <div style={{color:C.muted}}>Tenant: {p.tenant} — ${p.rent}/mo {p.lease_end?`— Lease ends ${p.lease_end}`:""}</div>
 </div>
+<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+<button style={{...btnS,padding:"5px 10px",fontSize:12}} onClick={()=>openEditProperty(p)}>Edit</button>
 <button style={btnDangerSm} onClick={()=>deleteProperty(p)}>Delete</button>
+</div>
 </div>
 )))}
 
@@ -716,6 +734,19 @@ return (
 </Modal>
 )}
 
+{modal==="editProperty"&&(
+<Modal title="Edit Property" onClose={closeModal}>
+<input style={inp} placeholder="Address" value={form.address||""} onChange={e=>setF("address",e.target.value)}/>
+<input style={inp} placeholder="Tenant Name" value={form.tenant||""} onChange={e=>setF("tenant",e.target.value)}/>
+<input style={inp} type="number" placeholder="Monthly Rent" value={form.rent||""} onChange={e=>setF("rent",e.target.value)}/>
+<input style={inp} type="date" value={form.leaseEnd||""} onChange={e=>setF("leaseEnd",e.target.value)}/>
+<div style={{display:"flex",gap:10}}>
+<button style={btnP} onClick={updateProperty}>Save Changes</button>
+<button style={btnS} onClick={closeModal}>Cancel</button>
+</div>
+</Modal>
+)}
+
 {modal==="repair"&&(
 <Modal title="Log Repair" onClose={closeModal}>
 <select style={inp} onChange={e=>setF("propertyId",e.target.value)}>
@@ -732,7 +763,18 @@ return (
 </select>
 <input style={inp} type="number" placeholder="Cost" onChange={e=>setF("cost",e.target.value)}/>
 <input style={inp} placeholder="Notes" onChange={e=>setF("notes",e.target.value)}/>
+<label style={{fontSize:12,color:C.muted,display:"block",marginBottom:4}}>Photo</label>
+<div style={{display:"flex",gap:10,marginBottom:6}}>
+<div style={{flex:1}}>
+<div style={{fontSize:11,color:C.muted,marginBottom:4}}>Take Photo</div>
+<input style={inp} type="file" accept="image/*" capture="environment" onChange={e=>setF("photoFile",e.target.files[0])}/>
+</div>
+<div style={{flex:1}}>
+<div style={{fontSize:11,color:C.muted,marginBottom:4}}>Choose from Gallery</div>
 <input style={inp} type="file" accept="image/*" onChange={e=>setF("photoFile",e.target.files[0])}/>
+</div>
+</div>
+{form.photoFile&&<div style={{fontSize:12,color:C.green,marginBottom:10}}>✓ Photo selected: {form.photoFile.name}</div>}
 <div style={{display:"flex",gap:10}}>
 <button style={btnP} onClick={addRepair}>Log Repair</button>
 <button style={btnS} onClick={closeModal}>Cancel</button>
