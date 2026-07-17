@@ -35,10 +35,10 @@ const btnS = {background:"transparent",color:C.navy,border:"1px solid "+C.border
 const btnDanger = {background:"transparent",color:C.red,border:"1px solid "+C.red,borderRadius:6,padding:"9px 18px",fontWeight:600};
 const btnDangerSm = {background:"transparent",color:C.red,border:"1px solid "+C.red,borderRadius:6,padding:"5px 10px",fontWeight:600,fontSize:12,cursor:"pointer"};
 
-// Extracts the storage object path from a Supabase public URL for the repair-photos bucket
-function extractStoragePath(url){
+// Extracts the storage object path from a Supabase public URL for a given bucket
+function extractStoragePath(url,bucket){
 if(!url)return null;
-const marker="/repair-photos/";
+const marker=`/${bucket}/`;
 const idx=url.indexOf(marker);
 if(idx===-1)return null;
 return url.slice(idx+marker.length);
@@ -167,6 +167,7 @@ const [rentHistory,setRentHistory]=useState([]);
 const [damages,setDamages]=useState([]);
 const [contractors,setContractors]=useState([]);
 const [inspections,setInspections]=useState([]);
+const [notices,setNotices]=useState([]);
 const [modal,setModal]=useState(null);
 const [form,setForm]=useState({});
 const [loadingData,setLoadingData]=useState(false);
@@ -191,13 +192,14 @@ if(session)loadAllData();
 
 const loadAllData=async()=>{
 setLoadingData(true);
-const [p,r,rh,d,c,ins]=await Promise.all([
+const [p,r,rh,d,c,ins,nt]=await Promise.all([
 sb.from("properties").select("*").order("id"),
 sb.from("repairs").select("*").order("id"),
 sb.from("rent_history").select("*").order("id"),
 sb.from("damages").select("*").order("id"),
 sb.from("contractors").select("*").order("id"),
 sb.from("inspections").select("*").order("id"),
+sb.from("notices").select("*").order("id"),
 ]);
 if(p.data)setProperties(p.data);
 if(r.data)setRepairs(r.data);
@@ -205,6 +207,7 @@ if(rh.data)setRentHistory(rh.data);
 if(d.data)setDamages(d.data);
 if(c.data)setContractors(c.data);
 if(ins.data)setInspections(ins.data);
+if(nt.data)setNotices(nt.data);
 setLoadingData(false);
 };
 
@@ -298,6 +301,18 @@ setInspections(insps=>insps.map(i=>i.id===inspectionId?{...i,sections:newSection
 setForm({});
 };
 
+const addNotice=async()=>{
+if(!form.propertyId||!form.noticeFile)return;
+const fileName=`${userId()}/${Date.now()}_${form.noticeFile.name}`;
+const {error:upErr}=await sb.storage.from("notices").upload(fileName,form.noticeFile,{contentType:form.noticeFile.type||undefined});
+if(upErr){showErr(upErr);return;}
+const {data:urlData}=sb.storage.from("notices").getPublicUrl(fileName);
+const {data,error}=await sb.from("notices").insert({user_id:userId(),property_id:Number(form.propertyId),title:form.noticeTitle||form.noticeFile.name,notice_type:form.noticeType||"Other",file_url:urlData.publicUrl}).select();
+showErr(error);
+if(data)setNotices(n=>[...n,...data]);
+closeModal();
+};
+
 const updateRepairStatus=async(id,status)=>{
 const {error}=await sb.from("repairs").update({status}).eq("id",id);
 showErr(error);
@@ -322,7 +337,7 @@ if(!error)setProperties(ps=>ps.filter(x=>x.id!==p.id));
 const deleteRepair=async(r)=>{
 if(!window.confirm(`Delete repair "${r.title}"? This cannot be undone.`))return;
 if(r.photo_url){
-const path=extractStoragePath(r.photo_url);
+const path=extractStoragePath(r.photo_url,"repair-photos");
 if(path)await sb.storage.from("repair-photos").remove([path]);
 }
 const {error}=await sb.from("repairs").delete().eq("id",r.id);
@@ -351,9 +366,18 @@ showErr(error);
 if(!error)setContractors(cs=>cs.filter(x=>x.id!==c.id));
 };
 
+const deleteNotice=async(n)=>{
+if(!window.confirm(`Delete notice "${n.title}"?`))return;
+const path=extractStoragePath(n.file_url,"notices");
+if(path)await sb.storage.from("notices").remove([path]);
+const {error}=await sb.from("notices").delete().eq("id",n.id);
+showErr(error);
+if(!error)setNotices(ns=>ns.filter(x=>x.id!==n.id));
+};
+
 const deleteInspection=async(insp)=>{
 if(!window.confirm(`Delete inspection "${insp.inspection_type}"? This will also delete all of its sections and photos.`))return;
-const paths=(insp.sections||[]).map(s=>extractStoragePath(s.photoUrl)).filter(Boolean);
+const paths=(insp.sections||[]).map(s=>extractStoragePath(s.photoUrl,"repair-photos")).filter(Boolean);
 if(paths.length)await sb.storage.from("repair-photos").remove(paths);
 const {error}=await sb.from("inspections").delete().eq("id",insp.id);
 showErr(error);
@@ -367,7 +391,7 @@ const deleteInspectionSection=async(insp,index)=>{
 if(!window.confirm("Delete this section?"))return;
 const sec=insp.sections[index];
 if(sec.photoUrl){
-const path=extractStoragePath(sec.photoUrl);
+const path=extractStoragePath(sec.photoUrl,"repair-photos");
 if(path)await sb.storage.from("repair-photos").remove([path]);
 }
 const newSections=insp.sections.filter((_,i)=>i!==index);
@@ -424,7 +448,7 @@ if(!session){
 return <AuthScreen/>;
 }
 
-const TABS=["Dashboard","Properties","Repairs","Rent History","Damage Log","Inspections","Contractors"];
+const TABS=["Dashboard","Properties","Repairs","Rent History","Damage Log","Inspections","Contractors","Notices"];
 
 return (
 <div style={{display:"flex",minHeight:"100vh"}}>
@@ -446,6 +470,7 @@ return (
 {tab==="Damage Log"&&<button style={btnP} onClick={()=>openModal("damage")}>+ Log Damage</button>}
 {tab==="Contractors"&&<button style={btnP} onClick={()=>openModal("contractor")}>+ Add Contractor</button>}
 {tab==="Inspections"&&!viewInspection&&<button style={btnP} onClick={()=>openModal("inspection")}>+ New Inspection</button>}
+{tab==="Notices"&&<button style={btnP} onClick={()=>openModal("notice")}>+ Upload Notice</button>}
 </div>
 
 {loadingData&&<div style={{color:C.muted}}>Loading your data...</div>}
@@ -542,6 +567,30 @@ return (
 })
 )}
 {!loadingData&&tab==="Contractors"&&contractors.length===0&&<div style={{color:C.muted}}>No contractors added yet.</div>}
+
+{!loadingData&&tab==="Notices"&&(
+properties.length===0?<div style={{color:C.muted}}>Add a property first, then you can upload notices to it.</div>:
+properties.map(p=>{
+const list=notices.filter(n=>n.property_id===p.id);
+return (
+<div key={p.id} style={{marginBottom:16}}>
+<h3 style={{color:C.navy,fontSize:15,marginBottom:8}}>{p.address}</h3>
+{list.length===0?<div style={{color:C.muted,fontSize:13,marginBottom:8}}>No notices uploaded yet.</div>:list.map(n=>(
+<div key={n.id} style={{background:"#fff",padding:14,borderRadius:10,border:"1px solid "+C.border,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+<div>
+<div style={{fontWeight:700}}>{n.title}</div>
+<div style={{color:C.muted,fontSize:13}}>{n.notice_type}{n.created_at?` — ${new Date(n.created_at).toLocaleDateString()}`:""}</div>
+</div>
+<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+<a href={n.file_url} target="_blank" rel="noopener noreferrer" style={{...btnS,padding:"5px 10px",fontSize:12,textDecoration:"none",display:"inline-block"}}>View</a>
+<button style={btnDangerSm} onClick={()=>deleteNotice(n)}>Delete</button>
+</div>
+</div>
+))}
+</div>
+);
+})
+)}
 
 {!loadingData&&tab==="Inspections"&&!viewInspection&&(inspections.length===0?<div style={{color:C.muted}}>No inspections yet.</div>:inspections.map(insp=>{
 const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
@@ -740,6 +789,30 @@ return (
 <input style={inp} placeholder="Inspection Type (e.g. Move-in, New Acquisition)" onChange={e=>setF("inspectionType",e.target.value)}/>
 <div style={{display:"flex",gap:10}}>
 <button style={btnP} onClick={addInspection}>Create</button>
+<button style={btnS} onClick={closeModal}>Cancel</button>
+</div>
+</Modal>
+)}
+
+{modal==="notice"&&(
+<Modal title="Upload Notice" onClose={closeModal}>
+<select style={inp} onChange={e=>setF("propertyId",e.target.value)}>
+<option value="">Select property…</option>
+{properties.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}
+</select>
+<select style={inp} onChange={e=>setF("noticeType",e.target.value)}>
+<option value="">Select Notice Type…</option>
+<option>Rent Increase</option>
+<option>3-Day Notice</option>
+<option>Reminder</option>
+<option>Lease Renewal</option>
+<option>Move-Out Notice</option>
+<option>Other</option>
+</select>
+<input style={inp} placeholder="Title (optional — defaults to file name)" onChange={e=>setF("noticeTitle",e.target.value)}/>
+<input style={inp} type="file" onChange={e=>setF("noticeFile",e.target.files[0])}/>
+<div style={{display:"flex",gap:10}}>
+<button style={btnP} onClick={addNotice}>Upload</button>
 <button style={btnS} onClick={closeModal}>Cancel</button>
 </div>
 </Modal>
