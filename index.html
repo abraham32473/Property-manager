@@ -160,6 +160,21 @@ y+=8;
 return doc.output("blob");
 }
 
+// Opens the device's mail app via a temporary anchor click, which is more reliable
+// on mobile browsers than setting window.location.href directly (which can silently fail).
+function openMailto(mailtoUrl){
+try{
+const link=document.createElement("a");
+link.href=mailtoUrl;
+link.style.display="none";
+document.body.appendChild(link);
+link.click();
+document.body.removeChild(link);
+}catch(e){
+alert("Couldn't open your email app. Please make sure a mail app is set up on this device.");
+}
+}
+
 function Modal({title,onClose,children}){
 return (
 <div style={{position:"fixed",inset:0,background:"#0006",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -251,7 +266,14 @@ else sessionStorage.removeItem("pt_viewInspection");
 },[viewInspection]);
 
 useEffect(()=>{
-try{sessionStorage.setItem("pt_form",JSON.stringify(form));}catch(e){}
+try{
+const safeForm={};
+Object.keys(form).forEach(k=>{
+if(form[k] instanceof File)return;
+safeForm[k]=form[k];
+});
+sessionStorage.setItem("pt_form",JSON.stringify(safeForm));
+}catch(e){}
 },[form]);
 
 useEffect(()=>{
@@ -354,7 +376,16 @@ closeModal();
 
 const addDamage=async()=>{
 if(!form.propertyId||!form.description)return;
-const {data,error}=await sb.from("damages").insert({user_id:userId(),property_id:Number(form.propertyId),description:form.description,severity:form.severity||"Minor",estimated_cost:Number(form.estimatedCost)||0,status:"Pending"}).select();
+let photoUrl=null;
+if(form.damagePhotoFile){
+const fileName=`${userId()}/${Date.now()}_${form.damagePhotoFile.name}`;
+const {error:upErr}=await sb.storage.from("repair-photos").upload(fileName,form.damagePhotoFile);
+if(!upErr){
+const {data:urlData}=sb.storage.from("repair-photos").getPublicUrl(fileName);
+photoUrl=urlData.publicUrl;
+}
+}
+const {data,error}=await sb.from("damages").insert({user_id:userId(),property_id:Number(form.propertyId),description:form.description,severity:form.severity||"Minor",estimated_cost:Number(form.estimatedCost)||0,status:"Pending",photo_url:photoUrl}).select();
 showErr(error);
 if(data)setDamages(d=>[...d,...data]);
 closeModal();
@@ -448,6 +479,10 @@ if(!error)setRentHistory(hs=>hs.filter(x=>x.id!==r.id));
 
 const deleteDamage=async(d)=>{
 if(!window.confirm("Delete this damage record?"))return;
+if(d.photo_url){
+const path=extractStoragePath(d.photo_url,"repair-photos");
+if(path)await sb.storage.from("repair-photos").remove([path]);
+}
 const {error}=await sb.from("damages").delete().eq("id",d.id);
 showErr(error);
 if(!error)setDamages(ds=>ds.filter(x=>x.id!==d.id));
@@ -508,7 +543,7 @@ await sb.auth.signOut();
 const emailRepair=(r)=>{
 const subject=encodeURIComponent(`Repair Request: ${r.title}`);
 const body=encodeURIComponent(`Property: ${propName(r.property_id)}\nIssue: ${r.title}\nPriority: ${r.priority}\nTrade: ${r.trade||"General"}\nNotes: ${r.notes||"None"}\n${r.photo_url?"Photo: "+r.photo_url:""}`);
-window.location.href=`mailto:?subject=${subject}&body=${body}`;
+openMailto(`mailto:?subject=${subject}&body=${body}`);
 };
 
 const emailInspection=async(insp)=>{
@@ -523,7 +558,7 @@ if(upErr)throw upErr;
 const {data:urlData}=sb.storage.from("repair-photos").getPublicUrl(fileName);
 const reportUrl=urlData.publicUrl;
 const body=encodeURIComponent(`Here is the ${insp.inspection_type} inspection report for ${fullAddress}:\n\n${reportUrl}`);
-window.location.href=`mailto:?subject=${subject}&body=${body}`;
+openMailto(`mailto:?subject=${subject}&body=${body}`);
 }catch(e){
 alert("Couldn't generate the report PDF ("+(e.message||e)+"). Falling back to a plain-text email instead.");
 const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
@@ -534,7 +569,7 @@ const photoLine=sec.photoUrl?`\n  Photo: ${sec.photoUrl}`:"";
 return `- ${sec.name}: $${sec.cost}${contractorLine}${notesLine}${photoLine}`;
 }).join("\n");
 const body=encodeURIComponent(`Property: ${fullAddress}\nInspection Type: ${insp.inspection_type}\nDate: ${insp.inspection_date}\n\nSections:\n${sectionLines||"None"}\n\nTotal Estimate: $${total}`);
-window.location.href=`mailto:?subject=${subject}&body=${body}`;
+openMailto(`mailto:?subject=${subject}&body=${body}`);
 }
 };
 
@@ -640,6 +675,7 @@ return (
 <button style={btnDangerSm} onClick={()=>deleteDamage(d)}>Delete</button>
 </div>
 <div style={{color:C.muted,marginBottom:8}}>{propName(d.property_id)} — {d.severity} — Est. ${d.estimated_cost}</div>
+{d.photo_url&&<img src={d.photo_url} style={{maxWidth:150,borderRadius:6,marginBottom:8,display:"block"}}/>}
 <select value={d.status} onChange={e=>updateDamageStatus(d.id,e.target.value)} style={{...inp,width:"auto",marginBottom:0}}>
 <option>Pending</option><option>Deducted from deposit</option><option>Tenant paid</option><option>Disputed</option>
 </select>
@@ -892,6 +928,18 @@ return (
 <option>Minor</option><option>Moderate</option><option>Severe</option>
 </select>
 <input style={inp} type="number" placeholder="Estimated Cost" onChange={e=>setF("estimatedCost",e.target.value)}/>
+<label style={{fontSize:12,color:C.muted,display:"block",marginBottom:4}}>Photo</label>
+<div style={{display:"flex",gap:10,marginBottom:6}}>
+<div style={{flex:1}}>
+<div style={{fontSize:11,color:C.muted,marginBottom:4}}>Take Photo</div>
+<input style={inp} type="file" accept="image/*" capture="environment" onChange={e=>setF("damagePhotoFile",e.target.files[0])}/>
+</div>
+<div style={{flex:1}}>
+<div style={{fontSize:11,color:C.muted,marginBottom:4}}>Choose from Gallery</div>
+<input style={inp} type="file" accept="image/*" onChange={e=>setF("damagePhotoFile",e.target.files[0])}/>
+</div>
+</div>
+{form.damagePhotoFile&&<div style={{fontSize:12,color:C.green,marginBottom:10}}>✓ Photo selected: {form.damagePhotoFile.name}</div>}
 <div style={{display:"flex",gap:10}}>
 <button style={btnP} onClick={addDamage}>Log Damage</button>
 <button style={btnS} onClick={closeModal}>Cancel</button>
