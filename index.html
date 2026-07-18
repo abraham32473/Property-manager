@@ -243,7 +243,7 @@ const [damages,setDamages]=useState([]);
 const [contractors,setContractors]=useState([]);
 const [inspections,setInspections]=useState([]);
 const [notices,setNotices]=useState([]);
-const [modal,setModal]=useState(null);
+const [modal,setModal]=useState(()=>{try{return sessionStorage.getItem("pt_modal")||null;}catch(e){return null;}});
 const [form,setForm]=useState(()=>{try{const saved=sessionStorage.getItem("pt_form");return saved?JSON.parse(saved):{};}catch(e){return {};}});
 const [loadingData,setLoadingData]=useState(false);
 const [viewInspection,setViewInspection]=useState(()=>{try{const saved=sessionStorage.getItem("pt_viewInspection");return saved?Number(saved):null;}catch(e){return null;}});
@@ -260,6 +260,13 @@ if(viewInspection)sessionStorage.setItem("pt_viewInspection",String(viewInspecti
 else sessionStorage.removeItem("pt_viewInspection");
 }catch(e){}
 },[viewInspection]);
+
+useEffect(()=>{
+try{
+if(modal)sessionStorage.setItem("pt_modal",modal);
+else sessionStorage.removeItem("pt_modal");
+}catch(e){}
+},[modal]);
 
 useEffect(()=>{
 try{
@@ -532,7 +539,7 @@ const openRepairs=repairs.filter(r=>r.status!=="Resolved").length;
 const monthlyRent=properties.reduce((s,p)=>s+Number(p.rent),0);
 
 const logout=async()=>{
-try{sessionStorage.removeItem("pt_tab");sessionStorage.removeItem("pt_viewInspection");sessionStorage.removeItem("pt_form");}catch(e){}
+try{sessionStorage.removeItem("pt_tab");sessionStorage.removeItem("pt_viewInspection");sessionStorage.removeItem("pt_form");sessionStorage.removeItem("pt_modal");}catch(e){}
 await sb.auth.signOut();
 };
 
@@ -864,7 +871,7 @@ return (
 
 {modal==="repair"&&(
 <Modal title="Log Repair" onClose={closeModal}>
-<select style={inp} onChange={e=>setF("propertyId",e.target.value)}>
+<select style={inp} value={form.propertyId||""} onChange={e=>setF("propertyId",e.target.value)}>
 <option value="">Select property…</option>
 {properties.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}
 </select>
@@ -899,7 +906,7 @@ return (
 
 {modal==="rent"&&(
 <Modal title="Rent Increase" onClose={closeModal}>
-<select style={inp} onChange={e=>setF("propertyId",e.target.value)}>
+<select style={inp} value={form.propertyId||""} onChange={e=>setF("propertyId",e.target.value)}>
 <option value="">Select property…</option>
 {properties.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}
 </select>
@@ -915,7 +922,7 @@ return (
 
 {modal==="damage"&&(
 <Modal title="Log Damage" onClose={closeModal}>
-<select style={inp} onChange={e=>setF("propertyId",e.target.value)}>
+<select style={inp} value={form.propertyId||""} onChange={e=>setF("propertyId",e.target.value)}>
 <option value="">Select property…</option>
 {properties.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}
 </select>
@@ -962,7 +969,7 @@ return (
 
 {modal==="inspection"&&(
 <Modal title="New Inspection" onClose={closeModal}>
-<select style={inp} onChange={e=>setF("propertyId",e.target.value)}>
+<select style={inp} value={form.propertyId||""} onChange={e=>setF("propertyId",e.target.value)}>
 <option value="">Select property…</option>
 {properties.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}
 </select>
@@ -976,7 +983,7 @@ return (
 
 {modal==="notice"&&(
 <Modal title="Upload Notice" onClose={closeModal}>
-<select style={inp} onChange={e=>setF("propertyId",e.target.value)}>
+<select style={inp} value={form.propertyId||""} onChange={e=>setF("propertyId",e.target.value)}>
 <option value="">Select property…</option>
 {properties.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}
 </select>
