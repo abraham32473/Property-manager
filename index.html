@@ -553,14 +553,20 @@ const subject=encodeURIComponent(`${insp.inspection_type} Inspection Report — 
 try{
 const pdfBlob=await buildInspectionReportPdf(insp,fullAddress,contractorName);
 const fileName=`${userId()}/reports/${Date.now()}_inspection_${insp.id}.pdf`;
-const {error:upErr}=await sb.storage.from("repair-photos").upload(fileName,pdfBlob,{contentType:"application/pdf",upsert:true});
+let upErr=null;
+for(let attempt=0;attempt<3;attempt++){
+const result=await sb.storage.from("repair-photos").upload(fileName,pdfBlob,{contentType:"application/pdf",upsert:true});
+upErr=result.error;
+if(!upErr)break;
+await new Promise(r=>setTimeout(r,1000));
+}
 if(upErr)throw upErr;
 const {data:urlData}=sb.storage.from("repair-photos").getPublicUrl(fileName);
 const reportUrl=urlData.publicUrl;
 const body=encodeURIComponent(`Here is the ${insp.inspection_type} inspection report for ${fullAddress}:\n\n${reportUrl}`);
 openMailto(`mailto:?subject=${subject}&body=${body}`);
 }catch(e){
-alert("Couldn't generate the report PDF ("+(e.message||e)+"). Falling back to a plain-text email instead.");
+alert("Couldn't generate the report PDF after a few tries ("+(e.message||e)+"). This is usually a brief connection hiccup — check your signal/WiFi and try again. Falling back to a plain-text email for now.");
 const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
 const sectionLines=(insp.sections||[]).map(sec=>{
 const contractorLine=sec.contractorId?` — ${contractorName(sec.contractorId)}`:"";
