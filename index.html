@@ -8,6 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: Arial, sans-serif; background: #f7f8fc; }
@@ -44,56 +45,119 @@ if(idx===-1)return null;
 return url.slice(idx+marker.length);
 }
 
-// Basic HTML-escaping so user-entered text can't break the generated report page
-function escapeHtml(str){
-if(str===null||str===undefined)return "";
-return String(str).replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// Fetches an image URL and converts it to a base64 data URL for PDF embedding
+async function loadImageAsDataURL(url){
+try{
+const res=await fetch(url);
+const blob=await res.blob();
+return await new Promise((resolve,reject)=>{
+const reader=new FileReader();
+reader.onloadend=()=>resolve(reader.result);
+reader.onerror=reject;
+reader.readAsDataURL(blob);
+});
+}catch(e){
+return null;
+}
 }
 
-// Builds a standalone, styled HTML report page for an inspection (letterhead + sections + photos)
-function buildInspectionReportHtml(insp,propertyAddress,contractorNameFn){
+// Gets natural pixel dimensions of a loaded image so it can be scaled proportionally in the PDF
+function getImageSize(dataUrl){
+return new Promise((resolve)=>{
+const img=new Image();
+img.onload=()=>resolve({width:img.width,height:img.height});
+img.onerror=()=>resolve({width:0,height:0});
+img.src=dataUrl;
+});
+}
+
+// Builds a letterhead-styled PDF report for an inspection (title, address, sections, embedded photos)
+async function buildInspectionReportPdf(insp,propertyAddress,contractorNameFn){
+const { jsPDF } = window.jspdf;
+const doc=new jsPDF({unit:"pt",format:"letter"});
+const pageWidth=doc.internal.pageSize.getWidth();
+const pageHeight=doc.internal.pageSize.getHeight();
+const marginX=40;
+const maxWidth=pageWidth-marginX*2;
+let y=50;
 const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
-const sectionsHtml=(insp.sections||[]).length===0
-?`<p style="color:#6b7a99;">No sections recorded.</p>`
-:(insp.sections||[]).map(sec=>`
-<div style="background:#fff;border:1px solid #e2e6ef;border-radius:10px;padding:16px;margin-bottom:14px;">
-<div style="display:flex;justify-content:space-between;align-items:baseline;">
-<strong style="font-size:16px;color:#1a2744;">${escapeHtml(sec.name)}</strong>
-<span style="color:#2e7d32;font-weight:700;">$${escapeHtml(sec.cost)}</span>
-</div>
-${sec.contractorId?`<p style="color:#6b7a99;font-size:13px;margin-top:6px;">Contractor: ${escapeHtml(contractorNameFn(sec.contractorId))}</p>`:""}
-${sec.notes?`<p style="font-size:13px;margin-top:6px;">${escapeHtml(sec.notes)}</p>`:""}
-${sec.photoUrl?`<img src="${sec.photoUrl}" style="max-width:100%;border-radius:8px;margin-top:10px;display:block;"/>`:""}
-</div>
-`).join("");
-return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>${escapeHtml(insp.inspection_type)} Inspection Report</title>
-<style>
-body{font-family:Arial,sans-serif;background:#f7f8fc;margin:0;padding:0;color:#1a2744;}
-.wrap{max-width:640px;margin:0 auto;padding:30px 20px;}
-.letterhead{text-align:center;border-bottom:2px solid #1a2744;padding-bottom:16px;margin-bottom:24px;}
-.letterhead h1{font-size:22px;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px;}
-.letterhead .address{font-size:16px;color:#6b7a99;}
-.meta{color:#6b7a99;font-size:14px;margin-bottom:20px;}
-.total{font-size:16px;margin-bottom:20px;}
-</style>
-</head>
-<body>
-<div class="wrap">
-<div class="letterhead">
-<h1>${escapeHtml(insp.inspection_type)} Inspection Report</h1>
-<div class="address">${escapeHtml(propertyAddress)}</div>
-</div>
-<div class="meta">Inspection Date: ${escapeHtml(insp.inspection_date)}</div>
-<div class="total"><strong>Total Estimate:</strong> $${total}</div>
-${sectionsHtml}
-</div>
-</body>
-</html>`;
+
+const ensureSpace=(needed)=>{
+if(y+needed>pageHeight-40){
+doc.addPage();
+y=50;
+}
+};
+
+doc.setFont(undefined,"bold");
+doc.setFontSize(18);
+doc.text(`${insp.inspection_type} Inspection Report`,marginX,y);
+y+=10;
+doc.setDrawColor(26,39,68);
+doc.line(marginX,y,pageWidth-marginX,y);
+y+=24;
+
+doc.setFont(undefined,"normal");
+doc.setFontSize(13);
+doc.text(propertyAddress,marginX,y);
+y+=20;
+
+doc.setFontSize(10);
+doc.setTextColor(107,122,153);
+doc.text(`Inspection Date: ${insp.inspection_date}`,marginX,y);
+y+=16;
+doc.setTextColor(26,39,68);
+doc.setFontSize(12);
+doc.text(`Total Estimate: $${total}`,marginX,y);
+y+=26;
+
+const sections=insp.sections||[];
+if(sections.length===0){
+doc.setFontSize(11);
+doc.text("No sections recorded.",marginX,y);
+}
+
+for(const sec of sections){
+ensureSpace(50);
+doc.setFontSize(13);
+doc.setFont(undefined,"bold");
+doc.text(`${sec.name} — $${sec.cost}`,marginX,y);
+y+=18;
+doc.setFont(undefined,"normal");
+
+if(sec.contractorId){
+doc.setFontSize(10);
+doc.setTextColor(107,122,153);
+doc.text(`Contractor: ${contractorNameFn(sec.contractorId)}`,marginX,y);
+doc.setTextColor(26,39,68);
+y+=14;
+}
+
+if(sec.notes){
+doc.setFontSize(10);
+const lines=doc.splitTextToSize(sec.notes,maxWidth);
+ensureSpace(lines.length*12);
+doc.text(lines,marginX,y);
+y+=lines.length*12+4;
+}
+
+if(sec.photoUrl){
+const dataUrl=await loadImageAsDataURL(sec.photoUrl);
+if(dataUrl){
+const dims=await getImageSize(dataUrl);
+const displayWidth=Math.min(240,maxWidth);
+const displayHeight=dims.width?displayWidth*(dims.height/dims.width):160;
+ensureSpace(displayHeight+10);
+try{
+doc.addImage(dataUrl,"JPEG",marginX,y,displayWidth,displayHeight);
+}catch(e){}
+y+=displayHeight+16;
+}
+}
+y+=8;
+}
+
+return doc.output("blob");
 }
 
 function Modal({title,onClose,children}){
@@ -433,11 +497,17 @@ const emailInspection=async(insp)=>{
 const prop=properties.find(p=>p.id===insp.property_id);
 const fullAddress=prop?prop.address:"Unknown property";
 const subject=encodeURIComponent(`${insp.inspection_type} Inspection Report — ${propName(insp.property_id)}`);
-const html=buildInspectionReportHtml(insp,fullAddress,contractorName);
-const fileName=`${userId()}/reports/${Date.now()}_inspection_${insp.id}.html`;
-const {error:upErr}=await sb.storage.from("repair-photos").upload(fileName,new Blob([html],{type:"text/html"}),{contentType:"text/html",upsert:true});
-if(upErr){
-alert("Couldn't generate the hosted report link ("+upErr.message+"). Falling back to a plain-text email instead.");
+try{
+const pdfBlob=await buildInspectionReportPdf(insp,fullAddress,contractorName);
+const fileName=`${userId()}/reports/${Date.now()}_inspection_${insp.id}.pdf`;
+const {error:upErr}=await sb.storage.from("repair-photos").upload(fileName,pdfBlob,{contentType:"application/pdf",upsert:true});
+if(upErr)throw upErr;
+const {data:urlData}=sb.storage.from("repair-photos").getPublicUrl(fileName);
+const reportUrl=urlData.publicUrl;
+const body=encodeURIComponent(`Here is the ${insp.inspection_type} inspection report for ${fullAddress}:\n\n${reportUrl}`);
+window.location.href=`mailto:?subject=${subject}&body=${body}`;
+}catch(e){
+alert("Couldn't generate the report PDF ("+(e.message||e)+"). Falling back to a plain-text email instead.");
 const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
 const sectionLines=(insp.sections||[]).map(sec=>{
 const contractorLine=sec.contractorId?` — ${contractorName(sec.contractorId)}`:"";
@@ -447,12 +517,7 @@ return `- ${sec.name}: $${sec.cost}${contractorLine}${notesLine}${photoLine}`;
 }).join("\n");
 const body=encodeURIComponent(`Property: ${fullAddress}\nInspection Type: ${insp.inspection_type}\nDate: ${insp.inspection_date}\n\nSections:\n${sectionLines||"None"}\n\nTotal Estimate: $${total}`);
 window.location.href=`mailto:?subject=${subject}&body=${body}`;
-return;
 }
-const {data:urlData}=sb.storage.from("repair-photos").getPublicUrl(fileName);
-const reportUrl=urlData.publicUrl;
-const body=encodeURIComponent(`Here is the ${insp.inspection_type} inspection report for ${fullAddress}:\n\n${reportUrl}`);
-window.location.href=`mailto:?subject=${subject}&body=${body}`;
 };
 
 if(checkingSession){
