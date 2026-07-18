@@ -224,7 +224,7 @@ Don't have an account? <span style={{color:C.blue,cursor:"pointer"}} onClick={()
 function App(){
 const [session,setSession]=useState(null);
 const [checkingSession,setCheckingSession]=useState(true);
-const [tab,setTab]=useState("Dashboard");
+const [tab,setTab]=useState(()=>{try{return sessionStorage.getItem("pt_tab")||"Dashboard";}catch(e){return "Dashboard";}});
 const [properties,setProperties]=useState([]);
 const [repairs,setRepairs]=useState([]);
 const [rentHistory,setRentHistory]=useState([]);
@@ -233,11 +233,26 @@ const [contractors,setContractors]=useState([]);
 const [inspections,setInspections]=useState([]);
 const [notices,setNotices]=useState([]);
 const [modal,setModal]=useState(null);
-const [form,setForm]=useState({});
+const [form,setForm]=useState(()=>{try{const saved=sessionStorage.getItem("pt_form");return saved?JSON.parse(saved):{};}catch(e){return {};}});
 const [loadingData,setLoadingData]=useState(false);
-const [viewInspection,setViewInspection]=useState(null);
+const [viewInspection,setViewInspection]=useState(()=>{try{const saved=sessionStorage.getItem("pt_viewInspection");return saved?Number(saved):null;}catch(e){return null;}});
 const [printRepair,setPrintRepair]=useState(null);
 const [printInspection,setPrintInspection]=useState(null);
+
+useEffect(()=>{
+try{sessionStorage.setItem("pt_tab",tab);}catch(e){}
+},[tab]);
+
+useEffect(()=>{
+try{
+if(viewInspection)sessionStorage.setItem("pt_viewInspection",String(viewInspection));
+else sessionStorage.removeItem("pt_viewInspection");
+}catch(e){}
+},[viewInspection]);
+
+useEffect(()=>{
+try{sessionStorage.setItem("pt_form",JSON.stringify(form));}catch(e){}
+},[form]);
 
 useEffect(()=>{
 sb.auth.getSession().then(({data})=>{
@@ -485,7 +500,10 @@ const contractorsForTrade=(trade)=>contractors.filter(c=>c.trade===trade);
 const openRepairs=repairs.filter(r=>r.status!=="Resolved").length;
 const monthlyRent=properties.reduce((s,p)=>s+Number(p.rent),0);
 
-const logout=async()=>{await sb.auth.signOut();};
+const logout=async()=>{
+try{sessionStorage.removeItem("pt_tab");sessionStorage.removeItem("pt_viewInspection");sessionStorage.removeItem("pt_form");}catch(e){}
+await sb.auth.signOut();
+};
 
 const emailRepair=(r)=>{
 const subject=encodeURIComponent(`Repair Request: ${r.title}`);
@@ -679,7 +697,7 @@ return (
 const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
 return (
 <div key={insp.id} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
-<div onClick={()=>setViewInspection(insp.id)} style={{cursor:"pointer",flex:1,minWidth:180}}>
+<div onClick={()=>{setViewInspection(insp.id);setForm({});}} style={{cursor:"pointer",flex:1,minWidth:180}}>
 <div style={{fontWeight:700}}>{insp.inspection_type} — {propName(insp.property_id)}</div>
 <div style={{color:C.muted}}>{insp.inspection_date} — {(insp.sections||[]).length} section(s) — Est. Total: ${total}</div>
 </div>
@@ -699,7 +717,7 @@ const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
 return (
 <div>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
-<button style={btnS} onClick={()=>setViewInspection(null)}>← Back to Inspections</button>
+<button style={btnS} onClick={()=>{setViewInspection(null);setForm({});}}>← Back to Inspections</button>
 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
 <button style={{...btnS,padding:"9px 14px"}} onClick={()=>{setPrintInspection(insp);setTimeout(()=>window.print(),100);}}>Print</button>
 <button style={{...btnS,padding:"9px 14px"}} onClick={()=>emailInspection(insp)}>Email</button>
