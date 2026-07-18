@@ -80,7 +80,6 @@ const pageHeight=doc.internal.pageSize.getHeight();
 const marginX=40;
 const maxWidth=pageWidth-marginX*2;
 let y=50;
-const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
 
 const ensureSpace=(needed)=>{
 if(y+needed>pageHeight-40){
@@ -105,10 +104,7 @@ y+=20;
 doc.setFontSize(10);
 doc.setTextColor(107,122,153);
 doc.text(`Inspection Date: ${insp.inspection_date}`,marginX,y);
-y+=16;
 doc.setTextColor(26,39,68);
-doc.setFontSize(12);
-doc.text(`Total Estimate: $${total}`,marginX,y);
 y+=26;
 
 const sections=insp.sections||[];
@@ -121,7 +117,7 @@ for(const sec of sections){
 ensureSpace(50);
 doc.setFontSize(13);
 doc.setFont(undefined,"bold");
-doc.text(`${sec.name} — $${sec.cost}`,marginX,y);
+doc.text(sec.name,marginX,y);
 y+=18;
 doc.setFont(undefined,"normal");
 
@@ -419,7 +415,7 @@ const {data:urlData}=sb.storage.from("repair-photos").getPublicUrl(fileName);
 photoUrl=urlData.publicUrl;
 }
 }
-const newSections=[...(insp.sections||[]),{name:form.sectionName,cost:Number(form.sectionCost)||0,contractorId:form.sectionContractor||null,photoUrl,notes:form.sectionNotes||""}];
+const newSections=[...(insp.sections||[]),{name:form.sectionName,contractorId:form.sectionContractor||null,photoUrl,notes:form.sectionNotes||""}];
 const {error}=await sb.from("inspections").update({sections:newSections}).eq("id",inspectionId);
 showErr(error);
 setInspections(insps=>insps.map(i=>i.id===inspectionId?{...i,sections:newSections}:i));
@@ -567,14 +563,13 @@ const body=encodeURIComponent(`Here is the ${insp.inspection_type} inspection re
 openMailto(`mailto:?subject=${subject}&body=${body}`);
 }catch(e){
 alert("Couldn't generate the report PDF after a few tries ("+(e.message||e)+"). This is usually a brief connection hiccup — check your signal/WiFi and try again. Falling back to a plain-text email for now.");
-const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
 const sectionLines=(insp.sections||[]).map(sec=>{
 const contractorLine=sec.contractorId?` — ${contractorName(sec.contractorId)}`:"";
 const notesLine=sec.notes?`\n  Notes: ${sec.notes}`:"";
 const photoLine=sec.photoUrl?`\n  Photo: ${sec.photoUrl}`:"";
-return `- ${sec.name}: $${sec.cost}${contractorLine}${notesLine}${photoLine}`;
+return `- ${sec.name}${contractorLine}${notesLine}${photoLine}`;
 }).join("\n");
-const body=encodeURIComponent(`Property: ${fullAddress}\nInspection Type: ${insp.inspection_type}\nDate: ${insp.inspection_date}\n\nSections:\n${sectionLines||"None"}\n\nTotal Estimate: $${total}`);
+const body=encodeURIComponent(`Property: ${fullAddress}\nInspection Type: ${insp.inspection_type}\nDate: ${insp.inspection_date}\n\nSections:\n${sectionLines||"None"}`);
 openMailto(`mailto:?subject=${subject}&body=${body}`);
 }
 };
@@ -736,12 +731,11 @@ return (
 )}
 
 {!loadingData&&tab==="Inspections"&&!viewInspection&&(inspections.length===0?<div style={{color:C.muted}}>No inspections yet.</div>:inspections.map(insp=>{
-const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
 return (
 <div key={insp.id} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
 <div onClick={()=>{setViewInspection(insp.id);setForm({});}} style={{cursor:"pointer",flex:1,minWidth:180}}>
 <div style={{fontWeight:700}}>{insp.inspection_type} — {propName(insp.property_id)}</div>
-<div style={{color:C.muted}}>{insp.inspection_date} — {(insp.sections||[]).length} section(s) — Est. Total: ${total}</div>
+<div style={{color:C.muted}}>{insp.inspection_date} — {(insp.sections||[]).length} section(s)</div>
 </div>
 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
 <button style={{...btnS,padding:"5px 10px",fontSize:12}} onClick={(e)=>{e.stopPropagation();setPrintInspection(insp);setTimeout(()=>window.print(),100);}}>Print</button>
@@ -755,7 +749,6 @@ return (
 {!loadingData&&tab==="Inspections"&&viewInspection&&(()=>{
 const insp=inspections.find(i=>i.id===viewInspection);
 if(!insp)return null;
-const total=(insp.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
 return (
 <div>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
@@ -767,14 +760,14 @@ return (
 </div>
 </div>
 <h2 style={{color:C.navy}}>{insp.inspection_type} — {propName(insp.property_id)}</h2>
-<div style={{color:C.muted,marginBottom:16}}>{insp.inspection_date} — Total Estimate: <strong style={{color:C.green}}>${total}</strong></div>
+<div style={{color:C.muted,marginBottom:16}}>{insp.inspection_date}</div>
 {(insp.sections||[]).map((sec,i)=>(
 <div key={i} style={{background:"#fff",padding:16,borderRadius:10,border:"1px solid "+C.border,marginBottom:10}}>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
 <div style={{fontWeight:700}}>{sec.name}</div>
 <button style={btnDangerSm} onClick={()=>deleteInspectionSection(insp,i)}>Delete</button>
 </div>
-<div style={{color:C.muted,fontSize:13,marginBottom:6}}>Est. Cost: ${sec.cost} {sec.contractorId?`— ${contractorName(sec.contractorId)}`:""}</div>
+{sec.contractorId&&<div style={{color:C.muted,fontSize:13,marginBottom:6}}>{contractorName(sec.contractorId)}</div>}
 {sec.notes&&<div style={{fontSize:13,color:C.muted,marginBottom:6}}>{sec.notes}</div>}
 {sec.photoUrl&&<img src={sec.photoUrl} style={{maxWidth:200,borderRadius:6}}/>}
 </div>
@@ -782,7 +775,6 @@ return (
 <div style={{background:"#fff",padding:16,borderRadius:10,border:"1px dashed "+C.border,marginTop:16}}>
 <h4 style={{marginBottom:10,color:C.navy}}>Add Section</h4>
 <input style={inp} placeholder="Section name (e.g. Roofing, Plumbing)" onChange={e=>setF("sectionName",e.target.value)}/>
-<input style={inp} type="number" placeholder="Estimated Cost" onChange={e=>setF("sectionCost",e.target.value)}/>
 <select style={inp} onChange={e=>setF("sectionContractor",e.target.value)}>
 <option value="">Assign Contractor (optional)</option>
 {contractors.map(c=><option key={c.id} value={c.id}>{c.name} — {c.trade}</option>)}
@@ -822,7 +814,6 @@ return (
 )}
 
 {printInspection&&(()=>{
-const total=(printInspection.sections||[]).reduce((s,sec)=>s+Number(sec.cost),0);
 const prop=properties.find(p=>p.id===printInspection.property_id);
 const fullAddress=prop?prop.address:propName(printInspection.property_id);
 return (
@@ -832,12 +823,11 @@ return (
 <h1 style={{fontSize:20,letterSpacing:0.5,textTransform:"uppercase",marginBottom:6}}>{printInspection.inspection_type} Inspection Report</h1>
 <div style={{fontSize:15,color:C.muted}}>{fullAddress}</div>
 </div>
-<p style={{color:C.muted,marginBottom:6}}>Inspection Date: {printInspection.inspection_date}</p>
-<p style={{marginBottom:16}}><strong>Total Estimate:</strong> ${total}</p>
+<p style={{marginBottom:16,color:C.muted}}>Inspection Date: {printInspection.inspection_date}</p>
 {(printInspection.sections||[]).length===0&&<p>No sections recorded.</p>}
 {(printInspection.sections||[]).map((sec,i)=>(
 <div key={i} style={{marginBottom:16,paddingBottom:12,borderBottom:"1px solid #ddd"}}>
-<p><strong>{sec.name}</strong> — ${sec.cost}{sec.contractorId?` — ${contractorName(sec.contractorId)}`:""}</p>
+<p><strong>{sec.name}</strong>{sec.contractorId?` — ${contractorName(sec.contractorId)}`:""}</p>
 {sec.notes&&<p>Notes: {sec.notes}</p>}
 {sec.photoUrl&&<img src={sec.photoUrl} style={{maxWidth:250,marginTop:6}}/>}
 </div>
