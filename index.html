@@ -32,7 +32,6 @@ const btnP = { background: C.navy, color: "#fff", border: "none", borderRadius: 
 const btnS = { background: "transparent", color: C.navy, border: "1px solid " + C.border, borderRadius: 6, padding: "9px 18px", fontWeight: 600 };
 const btnDanger = { background: "transparent", color: C.red, border: "1px solid " + C.red, borderRadius: 6, padding: "9px 18px", fontWeight: 600 };
 const btnDangerSm = { background: "transparent", color: C.red, border: "1px solid " + C.red, borderRadius: 6, padding: "5px 10px", fontWeight: 600, fontSize: 12, cursor: "pointer" };
-// Extracts the storage object path from a Supabase public URL for a given bucket
 function extractStoragePath(url, bucket) {
     if (!url)
         return null;
@@ -42,7 +41,6 @@ function extractStoragePath(url, bucket) {
         return null;
     return url.slice(idx + marker.length);
 }
-// Fetches an image URL and converts it to a base64 data URL for PDF embedding
 async function loadImageAsDataURL(url) {
     try {
         const res = await fetch(url);
@@ -58,7 +56,6 @@ async function loadImageAsDataURL(url) {
         return null;
     }
 }
-// Gets natural pixel dimensions of a loaded image so it can be scaled proportionally in the PDF
 function getImageSize(dataUrl) {
     return new Promise((resolve) => {
         const img = new Image();
@@ -67,7 +64,6 @@ function getImageSize(dataUrl) {
         img.src = dataUrl;
     });
 }
-// Builds a letterhead-styled PDF report for an inspection (title, address, sections, embedded photos)
 async function buildInspectionReportPdf(insp, propertyAddress, contractorNameFn) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: "pt", format: "letter" });
@@ -142,8 +138,6 @@ async function buildInspectionReportPdf(insp, propertyAddress, contractorNameFn)
     }
     return doc.output("blob");
 }
-// Opens the device's mail app via a temporary anchor click, which is more reliable
-// on mobile browsers than setting window.location.href directly (which can silently fail).
 function openMailto(mailtoUrl) {
     try {
         const link = document.createElement("a");
@@ -157,7 +151,6 @@ function openMailto(mailtoUrl) {
         alert("Couldn't open your email app. Please make sure a mail app is set up on this device.");
     }
 }
-// Retries a Supabase call a few times before giving up, to smooth over brief connection drops
 async function withRetry(fn, attempts = 3, delayMs = 1000) {
     let lastError = null;
     for (let i = 0; i < attempts; i++) {
@@ -168,6 +161,18 @@ async function withRetry(fn, attempts = 3, delayMs = 1000) {
         await new Promise(r => setTimeout(r, delayMs));
     }
     return { error: lastError };
+}
+function PhotoPicker({ idPrefix, label, file, onSelect, resetKey }) {
+    return (React.createElement("div", null,
+        React.createElement("label", { style: { fontSize: 12, color: C.muted, display: "block", marginBottom: 4 } }, label),
+        React.createElement("div", { style: { display: "flex", gap: 10, marginBottom: 6 } },
+            React.createElement("label", { htmlFor: idPrefix + "-camera", style: { ...btnS, flex: 1, textAlign: "center", cursor: "pointer", display: "block", boxSizing: "border-box" } }, "Camera"),
+            React.createElement("input", { key: idPrefix + "-camera-" + resetKey, id: idPrefix + "-camera", style: { display: "none" }, type: "file", accept: "image/*", capture: "environment", onChange: onSelect }),
+            React.createElement("label", { htmlFor: idPrefix + "-gallery", style: { ...btnS, flex: 1, textAlign: "center", cursor: "pointer", display: "block", boxSizing: "border-box" } }, "Gallery"),
+            React.createElement("input", { key: idPrefix + "-gallery-" + resetKey, id: idPrefix + "-gallery", style: { display: "none" }, type: "file", accept: "image/*", onChange: onSelect })),
+        file && React.createElement("div", { style: { fontSize: 12, color: C.green, marginBottom: 10 } },
+            "\u2713 Photo selected: ",
+            file.name)));
 }
 function Modal({ title, onClose, children }) {
     return (React.createElement("div", { style: { position: "fixed", inset: 0, background: "#0006", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" } },
@@ -263,6 +268,13 @@ function App() {
     catch (e) {
         return null;
     } });
+    const [viewProperty, setViewProperty] = useState(() => { try {
+        const saved = sessionStorage.getItem("pt_viewProperty");
+        return saved ? Number(saved) : null;
+    }
+    catch (e) {
+        return null;
+    } });
     const [printRepair, setPrintRepair] = useState(null);
     const [printInspection, setPrintInspection] = useState(null);
     useEffect(() => {
@@ -280,6 +292,15 @@ function App() {
         }
         catch (e) { }
     }, [viewInspection]);
+    useEffect(() => {
+        try {
+            if (viewProperty)
+                sessionStorage.setItem("pt_viewProperty", String(viewProperty));
+            else
+                sessionStorage.removeItem("pt_viewProperty");
+        }
+        catch (e) { }
+    }, [viewProperty]);
     useEffect(() => {
         try {
             if (modal)
@@ -342,11 +363,10 @@ function App() {
             setNotices(nt.data);
         setLoadingData(false);
     };
-    const openModal = (t) => { setModal(t); setForm({}); };
-    const closeModal = () => { setModal(null); setForm({}); };
+    const [resetKey, setResetKey] = useState(0);
+    const openModal = (t) => { setModal(t); setForm({}); setResetKey(k => k + 1); };
+    const closeModal = () => { setModal(null); setForm({}); setResetKey(k => k + 1); };
     const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
-    // Some phones hand back an empty/broken file when the camera capture fails to save properly.
-    // This catches that immediately so the person can retake the photo before trying to log anything.
     const handlePhotoSelect = (e, key) => {
         const file = e.target.files[0];
         if (!file) {
@@ -512,6 +532,7 @@ function App() {
         if (!error) {
             setInspections(insps => insps.map(i => i.id === inspectionId ? { ...i, sections: newSections } : i));
             setForm({});
+            setResetKey(k => k + 1);
         }
     };
     const openEditSection = (insp, index) => {
@@ -559,7 +580,6 @@ function App() {
         showErr(error);
         setDamages(ds => ds.map(d => d.id === id ? { ...d, status } : d));
     };
-    // ---- DELETE FUNCTIONS ----
     const deleteProperty = async (p) => {
         if (!window.confirm(`Delete property "${p.address}"?\n\nThis does not automatically delete related repairs, damages, rent history, or inspections for this property — you may want to remove those first.`))
             return;
@@ -659,6 +679,7 @@ function App() {
         try {
             sessionStorage.removeItem("pt_tab");
             sessionStorage.removeItem("pt_viewInspection");
+            sessionStorage.removeItem("pt_viewProperty");
             sessionStorage.removeItem("pt_form");
             sessionStorage.removeItem("pt_modal");
         }
@@ -674,6 +695,21 @@ function App() {
         const prop = properties.find(p => p.id === insp.property_id);
         const fullAddress = prop ? prop.address : "Unknown property";
         const subject = encodeURIComponent(`${insp.inspection_type} Inspection Report — ${propName(insp.property_id)}`);
+        let mailWindow = null;
+        try {
+            mailWindow = window.open("", "_blank");
+        }
+        catch (e) { }
+        const goToMailto = (url) => {
+            if (mailWindow) {
+                try {
+                    mailWindow.location.href = url;
+                    return;
+                }
+                catch (e) { }
+            }
+            openMailto(url);
+        };
         try {
             const pdfBlob = await buildInspectionReportPdf(insp, fullAddress, contractorName);
             const fileName = `${userId()}/reports/${Date.now()}_inspection_${insp.id}.pdf`;
@@ -690,7 +726,7 @@ function App() {
             const { data: urlData } = sb.storage.from("repair-photos").getPublicUrl(fileName);
             const reportUrl = urlData.publicUrl;
             const body = encodeURIComponent(`Here is the ${insp.inspection_type} inspection report for ${fullAddress}:\n\n${reportUrl}`);
-            openMailto(`mailto:?subject=${subject}&body=${body}`);
+            goToMailto(`mailto:?subject=${subject}&body=${body}`);
         }
         catch (e) {
             alert("Couldn't generate the report PDF after a few tries (" + (e.message || e) + "). This is usually a brief connection hiccup — check your signal/WiFi and try again. Falling back to a plain-text email for now.");
@@ -701,7 +737,7 @@ function App() {
                 return `- ${sec.name}${contractorLine}${notesLine}${photoLine}`;
             }).join("\n");
             const body = encodeURIComponent(`Property: ${fullAddress}\nInspection Type: ${insp.inspection_type}\nDate: ${insp.inspection_date}\n\nSections:\n${sectionLines || "None"}`);
-            openMailto(`mailto:?subject=${subject}&body=${body}`);
+            goToMailto(`mailto:?subject=${subject}&body=${body}`);
         }
     };
     if (checkingSession) {
@@ -714,14 +750,14 @@ function App() {
     return (React.createElement("div", { style: { display: "flex", minHeight: "100vh" } },
         React.createElement("div", { className: "no-print", style: { width: 200, background: C.navy, padding: 20, color: "#fff", flexShrink: 0, display: "flex", flexDirection: "column" } },
             React.createElement("h2", { style: { fontSize: 18, marginBottom: 20 } }, "PropTrack"),
-            TABS.map(t => (React.createElement("div", { key: t, onClick: () => { setTab(t); setViewInspection(null); }, style: { padding: "10px 0", cursor: "pointer", color: tab === t ? C.accent : "#fff", fontSize: 14 } }, t))),
+            TABS.map(t => (React.createElement("div", { key: t, onClick: () => { setTab(t); setViewInspection(null); setViewProperty(null); }, style: { padding: "10px 0", cursor: "pointer", color: tab === t ? C.accent : "#fff", fontSize: 14 } }, t))),
             React.createElement("div", { style: { flex: 1 } }),
             React.createElement("div", { style: { fontSize: 12, color: "#8fa0c0", marginBottom: 8, wordBreak: "break-all" } }, session.user.email),
             React.createElement("button", { style: { ...btnS, color: "#fff", borderColor: "#3a4a6b", fontSize: 13, padding: "6px 12px" }, onClick: logout }, "Log Out")),
         React.createElement("div", { style: { flex: 1, padding: 24 } },
             React.createElement("div", { className: "no-print", style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 } },
                 React.createElement("h1", { style: { color: C.navy } }, tab),
-                tab === "Properties" && React.createElement("button", { style: btnP, onClick: () => openModal("property") }, "+ Add Property"),
+                tab === "Properties" && !viewProperty && React.createElement("button", { style: btnP, onClick: () => openModal("property") }, "+ Add Property"),
                 tab === "Repairs" && React.createElement("button", { style: btnP, onClick: () => openModal("repair") }, "+ Log Repair"),
                 tab === "Rent History" && React.createElement("button", { style: btnP, onClick: () => openModal("rent") }, "+ Rent Increase"),
                 tab === "Damage Log" && React.createElement("button", { style: btnP, onClick: () => openModal("damage") }, "+ Log Damage"),
@@ -744,8 +780,8 @@ function App() {
                 React.createElement("div", { style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border } },
                     React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Inspections"),
                     React.createElement("div", { style: { fontSize: 24, fontWeight: 700, color: C.orange } }, inspections.length)))),
-            !loadingData && tab === "Properties" && (properties.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No properties yet. Add your first one!") : properties.map(p => (React.createElement("div", { key: p.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
-                React.createElement("div", null,
+            !loadingData && tab === "Properties" && !viewProperty && (properties.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No properties yet. Add your first one!") : properties.map(p => (React.createElement("div", { key: p.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
+                React.createElement("div", { onClick: () => setViewProperty(p.id), style: { cursor: "pointer", flex: 1 } },
                     React.createElement("div", { style: { fontWeight: 700 } }, p.address),
                     React.createElement("div", { style: { color: C.muted } },
                         "Tenant: ",
@@ -757,6 +793,90 @@ function App() {
                 React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
                     React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditProperty(p) }, "Edit"),
                     React.createElement("button", { style: btnDangerSm, onClick: () => deleteProperty(p) }, "Delete")))))),
+            !loadingData && tab === "Properties" && viewProperty && (() => {
+                const p = properties.find(pr => pr.id === viewProperty);
+                if (!p)
+                    return null;
+                const pRepairs = repairs.filter(r => r.property_id === p.id);
+                const pDamages = damages.filter(d => d.property_id === p.id);
+                const pRent = rentHistory.filter(r => r.property_id === p.id);
+                const pInspections = inspections.filter(i => i.property_id === p.id);
+                const pNotices = notices.filter(n => n.property_id === p.id);
+                return (React.createElement("div", null,
+                    React.createElement("button", { style: { ...btnS, marginBottom: 16 }, onClick: () => setViewProperty(null) }, "\u2190 Back to Properties"),
+                    React.createElement("h2", { style: { color: C.navy, marginBottom: 4 } }, p.address),
+                    React.createElement("div", { style: { color: C.muted, marginBottom: 20 } },
+                        "Tenant: ",
+                        p.tenant,
+                        " \u2014 $",
+                        p.rent,
+                        "/mo ",
+                        p.lease_end ? `— Lease ends ${p.lease_end}` : ""),
+                    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8 } },
+                        "Repairs (",
+                        pRepairs.length,
+                        ")"),
+                    pRepairs.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 16 } }, "No repairs logged.") : pRepairs.map(r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8 } },
+                        React.createElement("div", { style: { fontWeight: 700 } }, r.title),
+                        React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                            r.trade || "General",
+                            " \u2014 ",
+                            r.priority,
+                            " priority \u2014 ",
+                            r.status,
+                            " \u2014 $",
+                            r.cost),
+                        r.photo_url && React.createElement("img", { src: r.photo_url, style: { maxWidth: 120, borderRadius: 6, marginTop: 6, display: "block" } })))),
+                    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8, marginTop: 16 } },
+                        "Damage Log (",
+                        pDamages.length,
+                        ")"),
+                    pDamages.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 16 } }, "No damage records.") : pDamages.map(d => (React.createElement("div", { key: d.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8 } },
+                        React.createElement("div", { style: { fontWeight: 700 } }, d.description),
+                        React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                            d.severity,
+                            " \u2014 Est. $",
+                            d.estimated_cost,
+                            " \u2014 ",
+                            d.status),
+                        d.photo_url && React.createElement("img", { src: d.photo_url, style: { maxWidth: 120, borderRadius: 6, marginTop: 6, display: "block" } })))),
+                    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8, marginTop: 16 } },
+                        "Rent History (",
+                        pRent.length,
+                        ")"),
+                    pRent.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 16 } }, "No rent changes recorded.") : pRent.map(r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8 } },
+                        React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                            "$",
+                            r.old_rent,
+                            " \u2192 $",
+                            r.new_rent,
+                            " ",
+                            r.effective_date ? `(${r.effective_date})` : "",
+                            " \u2014 ",
+                            r.reason)))),
+                    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8, marginTop: 16 } },
+                        "Inspections (",
+                        pInspections.length,
+                        ")"),
+                    pInspections.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 16 } }, "No inspections recorded.") : pInspections.map(i => (React.createElement("div", { key: i.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8 } },
+                        React.createElement("div", { style: { fontWeight: 700 } }, i.inspection_type),
+                        React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                            i.inspection_date,
+                            " \u2014 ",
+                            (i.sections || []).length,
+                            " section(s)")))),
+                    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8, marginTop: 16 } },
+                        "Notices (",
+                        pNotices.length,
+                        ")"),
+                    pNotices.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 16 } }, "No notices uploaded.") : pNotices.map(n => (React.createElement("div", { key: n.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" } },
+                        React.createElement("div", null,
+                            React.createElement("div", { style: { fontWeight: 700 } }, n.title),
+                            React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                                n.notice_type,
+                                n.created_at ? ` — ${new Date(n.created_at).toLocaleDateString()}` : "")),
+                        React.createElement("a", { href: n.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View"))))));
+            })(),
             !loadingData && tab === "Repairs" && (repairs.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No repairs logged yet.") : repairs.map(r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
                 React.createElement("div", { style: { fontWeight: 700 } }, r.title),
                 React.createElement("div", { style: { color: C.muted, marginBottom: 8 } },
@@ -883,25 +1003,15 @@ function App() {
                         sec.photoUrl && React.createElement("img", { src: sec.photoUrl, style: { maxWidth: 200, borderRadius: 6 } })))),
                     React.createElement("div", { style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px dashed " + C.border, marginTop: 16 } },
                         React.createElement("h4", { style: { marginBottom: 10, color: C.navy } }, "Add Section"),
-                        React.createElement("input", { style: inp, placeholder: "Section name (e.g. Roofing, Plumbing)", onChange: e => setF("sectionName", e.target.value) }),
-                        React.createElement("select", { style: inp, onChange: e => setF("sectionContractor", e.target.value) },
+                        React.createElement("input", { style: inp, placeholder: "Section name (e.g. Roofing, Plumbing)", value: form.sectionName || "", onChange: e => setF("sectionName", e.target.value) }),
+                        React.createElement("select", { style: inp, value: form.sectionContractor || "", onChange: e => setF("sectionContractor", e.target.value) },
                             React.createElement("option", { value: "" }, "Assign Contractor (optional)"),
                             contractors.map(c => React.createElement("option", { key: c.id, value: c.id },
                                 c.name,
                                 " \u2014 ",
                                 c.trade))),
-                        React.createElement("input", { style: inp, placeholder: "Notes", onChange: e => setF("sectionNotes", e.target.value) }),
-                        React.createElement("label", { style: { fontSize: 12, color: C.muted, display: "block", marginBottom: 4 } }, "Photo"),
-                        React.createElement("div", { style: { display: "flex", gap: 10, marginBottom: 6 } },
-                            React.createElement("div", { style: { flex: 1 } },
-                                React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Take Photo"),
-                                React.createElement("input", { style: inp, type: "file", accept: "image/*", capture: "environment", onChange: e => handlePhotoSelect(e, "sectionPhoto") })),
-                            React.createElement("div", { style: { flex: 1 } },
-                                React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Choose from Gallery"),
-                                React.createElement("input", { style: inp, type: "file", accept: "image/*", onChange: e => handlePhotoSelect(e, "sectionPhoto") }))),
-                        form.sectionPhoto && React.createElement("div", { style: { fontSize: 12, color: C.green, marginBottom: 10 } },
-                            "\u2713 Photo selected: ",
-                            form.sectionPhoto.name),
+                        React.createElement("input", { style: inp, placeholder: "Notes", value: form.sectionNotes || "", onChange: e => setF("sectionNotes", e.target.value) }),
+                        React.createElement(PhotoPicker, { idPrefix: "section-" + insp.id, label: "Photo", file: form.sectionPhoto, resetKey: resetKey, onSelect: e => handlePhotoSelect(e, "sectionPhoto") }),
                         React.createElement("button", { style: btnP, onClick: () => addInspectionSection(insp.id) }, "Add Section"))));
             })()),
         printRepair && (React.createElement("div", { style: { position: "fixed", inset: 0, background: "#fff", zIndex: 200, padding: 30 } },
@@ -981,17 +1091,7 @@ function App() {
                 React.createElement("option", null, "Low")),
             React.createElement("input", { style: inp, type: "number", placeholder: "Cost", onChange: e => setF("cost", e.target.value) }),
             React.createElement("input", { style: inp, placeholder: "Notes", onChange: e => setF("notes", e.target.value) }),
-            React.createElement("label", { style: { fontSize: 12, color: C.muted, display: "block", marginBottom: 4 } }, "Photo"),
-            React.createElement("div", { style: { display: "flex", gap: 10, marginBottom: 6 } },
-                React.createElement("div", { style: { flex: 1 } },
-                    React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Take Photo"),
-                    React.createElement("input", { style: inp, type: "file", accept: "image/*", capture: "environment", onChange: e => handlePhotoSelect(e, "photoFile") })),
-                React.createElement("div", { style: { flex: 1 } },
-                    React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Choose from Gallery"),
-                    React.createElement("input", { style: inp, type: "file", accept: "image/*", onChange: e => handlePhotoSelect(e, "photoFile") }))),
-            form.photoFile && React.createElement("div", { style: { fontSize: 12, color: C.green, marginBottom: 10 } },
-                "\u2713 Photo selected: ",
-                form.photoFile.name),
+            React.createElement(PhotoPicker, { idPrefix: "repair-photo", label: "Photo", file: form.photoFile, resetKey: resetKey, onSelect: e => handlePhotoSelect(e, "photoFile") }),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: addRepair }, "Log Repair"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
@@ -1032,17 +1132,7 @@ function App() {
                 React.createElement("option", null, "Moderate"),
                 React.createElement("option", null, "Severe")),
             React.createElement("input", { style: inp, type: "number", placeholder: "Estimated Cost", onChange: e => setF("estimatedCost", e.target.value) }),
-            React.createElement("label", { style: { fontSize: 12, color: C.muted, display: "block", marginBottom: 4 } }, "Photo"),
-            React.createElement("div", { style: { display: "flex", gap: 10, marginBottom: 6 } },
-                React.createElement("div", { style: { flex: 1 } },
-                    React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Take Photo"),
-                    React.createElement("input", { style: inp, type: "file", accept: "image/*", capture: "environment", onChange: e => handlePhotoSelect(e, "damagePhotoFile") })),
-                React.createElement("div", { style: { flex: 1 } },
-                    React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Choose from Gallery"),
-                    React.createElement("input", { style: inp, type: "file", accept: "image/*", onChange: e => handlePhotoSelect(e, "damagePhotoFile") }))),
-            form.damagePhotoFile && React.createElement("div", { style: { fontSize: 12, color: C.green, marginBottom: 10 } },
-                "\u2713 Photo selected: ",
-                form.damagePhotoFile.name),
+            React.createElement(PhotoPicker, { idPrefix: "damage-photo", label: "Photo", file: form.damagePhotoFile, resetKey: resetKey, onSelect: e => handlePhotoSelect(e, "damagePhotoFile") }),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: addDamage }, "Log Damage"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
@@ -1111,4 +1201,4 @@ function App() {
 ReactDOM.render(React.createElement(App, null), document.getElementById("root"));
 </script>
 </body>
-</html>
+  </html>
