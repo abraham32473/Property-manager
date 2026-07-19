@@ -151,6 +151,17 @@ function openMailto(mailtoUrl) {
         alert("Couldn't open your email app. Please make sure a mail app is set up on this device.");
     }
 }
+async function withRetry(fn, attempts = 3, delayMs = 1000) {
+    let lastError = null;
+    for (let i = 0; i < attempts; i++) {
+        const result = await fn();
+        if (!result.error)
+            return result;
+        lastError = result.error;
+        await new Promise(r => setTimeout(r, delayMs));
+    }
+    return { error: lastError };
+}
 function Modal({ title, onClose, children }) {
     return (React.createElement("div", { style: { position: "fixed", inset: 0, background: "#0006", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" } },
         React.createElement("div", { style: { background: "#fff", borderRadius: 12, padding: 24, width: 460, maxWidth: "92vw", maxHeight: "85vh", overflowY: "auto" } },
@@ -361,17 +372,34 @@ function App() {
         let photoUrl = null;
         if (form.photoFile) {
             const fileName = `${userId()}/${Date.now()}_${form.photoFile.name}`;
-            const { data: up, error: upErr } = await sb.storage.from("repair-photos").upload(fileName, form.photoFile);
+            const { error: upErr } = await withRetry(() => sb.storage.from("repair-photos").upload(fileName, form.photoFile));
             if (!upErr) {
                 const { data: urlData } = sb.storage.from("repair-photos").getPublicUrl(fileName);
                 photoUrl = urlData.publicUrl;
             }
+            else {
+                alert("The photo upload had trouble connecting, so this repair will be saved without it. You can add a photo later if needed.");
+            }
         }
-        const { data, error } = await sb.from("repairs").insert({ user_id: userId(), property_id: Number(form.propertyId), title: form.title, priority: form.priority || "Medium", status: "Open", cost: Number(form.cost) || 0, notes: form.notes || "", trade: form.trade || "General", photo_url: photoUrl }).select();
+        const { data, error } = await withRetry(() => sb.from("repairs").insert({ user_id: userId(), property_id: Number(form.propertyId), title: form.title, priority: form.priority || "Medium", status: "Open", cost: Number(form.cost) || 0, notes: form.notes || "", trade: form.trade || "General", photo_url: photoUrl }).select());
         showErr(error);
         if (data)
             setRepairs(r => [...r, ...data]);
         closeModal();
+    };
+    const openEditRepair = (r) => {
+        setForm({ repairId: r.id, propertyId: String(r.property_id), title: r.title, trade: r.trade || "", priority: r.priority, cost: r.cost, notes: r.notes || "" });
+        setModal("editRepair");
+    };
+    const updateRepair = async () => {
+        if (!form.repairId || !form.title || !form.propertyId)
+            return;
+        const { error } = await withRetry(() => sb.from("repairs").update({ property_id: Number(form.propertyId), title: form.title, trade: form.trade || "General", priority: form.priority || "Medium", cost: Number(form.cost) || 0, notes: form.notes || "" }).eq("id", form.repairId));
+        showErr(error);
+        if (!error) {
+            setRepairs(rs => rs.map(r => r.id === form.repairId ? { ...r, property_id: Number(form.propertyId), title: form.title, trade: form.trade || "General", priority: form.priority || "Medium", cost: Number(form.cost) || 0, notes: form.notes || "" } : r));
+            closeModal();
+        }
     };
     const addRentIncrease = async () => {
         if (!form.propertyId || !form.newRent)
@@ -392,17 +420,34 @@ function App() {
         let photoUrl = null;
         if (form.damagePhotoFile) {
             const fileName = `${userId()}/${Date.now()}_${form.damagePhotoFile.name}`;
-            const { error: upErr } = await sb.storage.from("repair-photos").upload(fileName, form.damagePhotoFile);
+            const { error: upErr } = await withRetry(() => sb.storage.from("repair-photos").upload(fileName, form.damagePhotoFile));
             if (!upErr) {
                 const { data: urlData } = sb.storage.from("repair-photos").getPublicUrl(fileName);
                 photoUrl = urlData.publicUrl;
             }
+            else {
+                alert("The photo upload had trouble connecting, so this damage record will be saved without it. You can add a photo later if needed.");
+            }
         }
-        const { data, error } = await sb.from("damages").insert({ user_id: userId(), property_id: Number(form.propertyId), description: form.description, severity: form.severity || "Minor", estimated_cost: Number(form.estimatedCost) || 0, status: "Pending", photo_url: photoUrl }).select();
+        const { data, error } = await withRetry(() => sb.from("damages").insert({ user_id: userId(), property_id: Number(form.propertyId), description: form.description, severity: form.severity || "Minor", estimated_cost: Number(form.estimatedCost) || 0, status: "Pending", photo_url: photoUrl }).select());
         showErr(error);
         if (data)
             setDamages(d => [...d, ...data]);
         closeModal();
+    };
+    const openEditDamage = (d) => {
+        setForm({ damageId: d.id, propertyId: String(d.property_id), description: d.description, severity: d.severity, estimatedCost: d.estimated_cost });
+        setModal("editDamage");
+    };
+    const updateDamage = async () => {
+        if (!form.damageId || !form.propertyId || !form.description)
+            return;
+        const { error } = await withRetry(() => sb.from("damages").update({ property_id: Number(form.propertyId), description: form.description, severity: form.severity || "Minor", estimated_cost: Number(form.estimatedCost) || 0 }).eq("id", form.damageId));
+        showErr(error);
+        if (!error) {
+            setDamages(ds => ds.map(d => d.id === form.damageId ? { ...d, property_id: Number(form.propertyId), description: form.description, severity: form.severity || "Minor", estimated_cost: Number(form.estimatedCost) || 0 } : d));
+            closeModal();
+        }
     };
     const addContractor = async () => {
         if (!form.name || !form.trade)
@@ -429,17 +474,41 @@ function App() {
         let photoUrl = null;
         if (form.sectionPhoto) {
             const fileName = `${userId()}/${Date.now()}_${form.sectionPhoto.name}`;
-            const { error: upErr } = await sb.storage.from("repair-photos").upload(fileName, form.sectionPhoto);
+            const { error: upErr } = await withRetry(() => sb.storage.from("repair-photos").upload(fileName, form.sectionPhoto));
             if (!upErr) {
                 const { data: urlData } = sb.storage.from("repair-photos").getPublicUrl(fileName);
                 photoUrl = urlData.publicUrl;
             }
+            else {
+                alert("The photo upload had trouble connecting, so this section will be saved without it. You can try adding a photo again after.");
+            }
         }
         const newSections = [...(insp.sections || []), { name: form.sectionName, contractorId: form.sectionContractor || null, photoUrl, notes: form.sectionNotes || "" }];
-        const { error } = await sb.from("inspections").update({ sections: newSections }).eq("id", inspectionId);
+        const { error } = await withRetry(() => sb.from("inspections").update({ sections: newSections }).eq("id", inspectionId));
         showErr(error);
-        setInspections(insps => insps.map(i => i.id === inspectionId ? { ...i, sections: newSections } : i));
-        setForm({});
+        if (!error) {
+            setInspections(insps => insps.map(i => i.id === inspectionId ? { ...i, sections: newSections } : i));
+            setForm({});
+        }
+    };
+    const openEditSection = (insp, index) => {
+        const sec = insp.sections[index];
+        setForm({ editingInspectionId: insp.id, editingSectionIndex: index, sectionName: sec.name, sectionNotes: sec.notes || "", sectionContractor: sec.contractorId || "" });
+        setModal("editSection");
+    };
+    const updateInspectionSection = async () => {
+        if (form.editingInspectionId == null || form.editingSectionIndex == null || !form.sectionName)
+            return;
+        const insp = inspections.find(i => i.id === form.editingInspectionId);
+        if (!insp)
+            return;
+        const newSections = insp.sections.map((sec, i) => i === form.editingSectionIndex ? { ...sec, name: form.sectionName, contractorId: form.sectionContractor || null, notes: form.sectionNotes || "" } : sec);
+        const { error } = await withRetry(() => sb.from("inspections").update({ sections: newSections }).eq("id", form.editingInspectionId));
+        showErr(error);
+        if (!error) {
+            setInspections(insps => insps.map(i => i.id === form.editingInspectionId ? { ...i, sections: newSections } : i));
+            closeModal();
+        }
     };
     const addNotice = async () => {
         if (!form.propertyId || !form.noticeFile)
@@ -681,6 +750,7 @@ function App() {
                     r.status === "Resolved" && React.createElement("span", { style: { color: C.green, fontSize: 12 } }, "\u2713 Resolved"),
                     React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => { setPrintRepair(r); setTimeout(() => window.print(), 100); } }, "Print"),
                     React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => emailRepair(r) }, "Email"),
+                    React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditRepair(r) }, "Edit"),
                     React.createElement("button", { style: btnDangerSm, onClick: () => deleteRepair(r) }, "Delete")))))),
             !loadingData && tab === "Rent History" && (rentHistory.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No rent changes recorded yet.") : rentHistory.map(r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
                 React.createElement("div", null,
@@ -698,7 +768,9 @@ function App() {
             !loadingData && tab === "Damage Log" && (damages.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No damage reports yet.") : damages.map(d => (React.createElement("div", { key: d.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
                 React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
                     React.createElement("div", { style: { fontWeight: 700 } }, d.description),
-                    React.createElement("button", { style: btnDangerSm, onClick: () => deleteDamage(d) }, "Delete")),
+                    React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                        React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditDamage(d) }, "Edit"),
+                        React.createElement("button", { style: btnDangerSm, onClick: () => deleteDamage(d) }, "Delete"))),
                 React.createElement("div", { style: { color: C.muted, marginBottom: 8 } },
                     propName(d.property_id),
                     " \u2014 ",
@@ -779,7 +851,9 @@ function App() {
                     (insp.sections || []).map((sec, i) => (React.createElement("div", { key: i, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
                         React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
                             React.createElement("div", { style: { fontWeight: 700 } }, sec.name),
-                            React.createElement("button", { style: btnDangerSm, onClick: () => deleteInspectionSection(insp, i) }, "Delete")),
+                            React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                                React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditSection(insp, i) }, "Edit"),
+                                React.createElement("button", { style: btnDangerSm, onClick: () => deleteInspectionSection(insp, i) }, "Delete"))),
                         sec.contractorId && React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 6 } }, contractorName(sec.contractorId)),
                         sec.notes && React.createElement("div", { style: { fontSize: 13, color: C.muted, marginBottom: 6 } }, sec.notes),
                         sec.photoUrl && React.createElement("img", { src: sec.photoUrl, style: { maxWidth: 200, borderRadius: 6 } })))),
@@ -897,6 +971,23 @@ function App() {
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: addRepair }, "Log Repair"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "editRepair" && (React.createElement(Modal, { title: "Edit Repair", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select property\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("input", { style: inp, placeholder: "Description", value: form.title || "", onChange: e => setF("title", e.target.value) }),
+            React.createElement("select", { style: inp, value: form.trade || "", onChange: e => setF("trade", e.target.value) },
+                React.createElement("option", { value: "" }, "Select Trade\u2026"),
+                TRADES.map(t => React.createElement("option", { key: t, value: t }, t))),
+            React.createElement("select", { style: inp, value: form.priority || "Medium", onChange: e => setF("priority", e.target.value) },
+                React.createElement("option", null, "Medium"),
+                React.createElement("option", null, "High"),
+                React.createElement("option", null, "Low")),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Cost", value: form.cost || "", onChange: e => setF("cost", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Notes", value: form.notes || "", onChange: e => setF("notes", e.target.value) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: updateRepair }, "Save Changes"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "rent" && (React.createElement(Modal, { title: "Rent Increase", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
                 React.createElement("option", { value: "" }, "Select property\u2026"),
@@ -931,6 +1022,19 @@ function App() {
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: addDamage }, "Log Damage"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "editDamage" && (React.createElement(Modal, { title: "Edit Damage", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select property\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("input", { style: inp, placeholder: "Description", value: form.description || "", onChange: e => setF("description", e.target.value) }),
+            React.createElement("select", { style: inp, value: form.severity || "Minor", onChange: e => setF("severity", e.target.value) },
+                React.createElement("option", null, "Minor"),
+                React.createElement("option", null, "Moderate"),
+                React.createElement("option", null, "Severe")),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Estimated Cost", value: form.estimatedCost || "", onChange: e => setF("estimatedCost", e.target.value) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: updateDamage }, "Save Changes"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "contractor" && (React.createElement(Modal, { title: "Add Contractor", onClose: closeModal },
             React.createElement("input", { style: inp, placeholder: "Name", onChange: e => setF("name", e.target.value) }),
             React.createElement("select", { style: inp, onChange: e => setF("trade", e.target.value) },
@@ -949,6 +1053,18 @@ function App() {
             React.createElement("input", { style: inp, placeholder: "Inspection Type (e.g. Move-in, New Acquisition)", onChange: e => setF("inspectionType", e.target.value) }),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: addInspection }, "Create"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "editSection" && (React.createElement(Modal, { title: "Edit Section", onClose: closeModal },
+            React.createElement("input", { style: inp, placeholder: "Section name (e.g. Roofing, Plumbing)", value: form.sectionName || "", onChange: e => setF("sectionName", e.target.value) }),
+            React.createElement("select", { style: inp, value: form.sectionContractor || "", onChange: e => setF("sectionContractor", e.target.value) },
+                React.createElement("option", { value: "" }, "Assign Contractor (optional)"),
+                contractors.map(c => React.createElement("option", { key: c.id, value: c.id },
+                    c.name,
+                    " \u2014 ",
+                    c.trade))),
+            React.createElement("input", { style: inp, placeholder: "Notes", value: form.sectionNotes || "", onChange: e => setF("sectionNotes", e.target.value) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: updateInspectionSection }, "Save Changes"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "notice" && (React.createElement(Modal, { title: "Upload Notice", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
