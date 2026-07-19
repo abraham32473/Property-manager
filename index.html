@@ -338,6 +338,20 @@ function App() {
     const openModal = (t) => { setModal(t); setForm({}); };
     const closeModal = () => { setModal(null); setForm({}); };
     const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
+    const handlePhotoSelect = (e, key) => {
+        const file = e.target.files[0];
+        if (!file) {
+            setF(key, null);
+            return;
+        }
+        if (file.size === 0) {
+            alert("That photo didn't capture properly (the file came back empty). Please try taking the picture again.");
+            e.target.value = "";
+            setF(key, null);
+            return;
+        }
+        setF(key, file);
+    };
     const userId = () => session.user.id;
     const showErr = (error) => {
         if (error)
@@ -871,10 +885,10 @@ function App() {
                         React.createElement("div", { style: { display: "flex", gap: 10, marginBottom: 6 } },
                             React.createElement("div", { style: { flex: 1 } },
                                 React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Take Photo"),
-                                React.createElement("input", { style: inp, type: "file", accept: "image/*", capture: "environment", onChange: e => setF("sectionPhoto", e.target.files[0]) })),
+                                React.createElement("input", { style: inp, type: "file", accept: "image/*", capture: "environment", onChange: e => handlePhotoSelect(e, "sectionPhoto") })),
                             React.createElement("div", { style: { flex: 1 } },
                                 React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Choose from Gallery"),
-                                React.createElement("input", { style: inp, type: "file", accept: "image/*", onChange: e => setF("sectionPhoto", e.target.files[0]) }))),
+                                React.createElement("input", { style: inp, type: "file", accept: "image/*", onChange: e => handlePhotoSelect(e, "sectionPhoto") }))),
                         form.sectionPhoto && React.createElement("div", { style: { fontSize: 12, color: C.green, marginBottom: 10 } },
                             "\u2713 Photo selected: ",
                             form.sectionPhoto.name),
@@ -961,10 +975,10 @@ function App() {
             React.createElement("div", { style: { display: "flex", gap: 10, marginBottom: 6 } },
                 React.createElement("div", { style: { flex: 1 } },
                     React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Take Photo"),
-                    React.createElement("input", { style: inp, type: "file", accept: "image/*", capture: "environment", onChange: e => setF("photoFile", e.target.files[0]) })),
+                    React.createElement("input", { style: inp, type: "file", accept: "image/*", capture: "environment", onChange: e => handlePhotoSelect(e, "photoFile") })),
                 React.createElement("div", { style: { flex: 1 } },
                     React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Choose from Gallery"),
-                    React.createElement("input", { style: inp, type: "file", accept: "image/*", onChange: e => setF("photoFile", e.target.files[0]) }))),
+                    React.createElement("input", { style: inp, type: "file", accept: "image/*", onChange: e => handlePhotoSelect(e, "photoFile") }))),
             form.photoFile && React.createElement("div", { style: { fontSize: 12, color: C.green, marginBottom: 10 } },
                 "\u2713 Photo selected: ",
                 form.photoFile.name),
@@ -1012,10 +1026,10 @@ function App() {
             React.createElement("div", { style: { display: "flex", gap: 10, marginBottom: 6 } },
                 React.createElement("div", { style: { flex: 1 } },
                     React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Take Photo"),
-                    React.createElement("input", { style: inp, type: "file", accept: "image/*", capture: "environment", onChange: e => setF("damagePhotoFile", e.target.files[0]) })),
+                    React.createElement("input", { style: inp, type: "file", accept: "image/*", capture: "environment", onChange: e => handlePhotoSelect(e, "damagePhotoFile") })),
                 React.createElement("div", { style: { flex: 1 } },
                     React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Choose from Gallery"),
-                    React.createElement("input", { style: inp, type: "file", accept: "image/*", onChange: e => setF("damagePhotoFile", e.target.files[0]) }))),
+                    React.createElement("input", { style: inp, type: "file", accept: "image/*", onChange: e => handlePhotoSelect(e, "damagePhotoFile") }))),
             form.damagePhotoFile && React.createElement("div", { style: { fontSize: 12, color: C.green, marginBottom: 10 } },
                 "\u2713 Photo selected: ",
                 form.damagePhotoFile.name),
