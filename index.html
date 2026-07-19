@@ -32,6 +32,7 @@ const btnP = { background: C.navy, color: "#fff", border: "none", borderRadius: 
 const btnS = { background: "transparent", color: C.navy, border: "1px solid " + C.border, borderRadius: 6, padding: "9px 18px", fontWeight: 600 };
 const btnDanger = { background: "transparent", color: C.red, border: "1px solid " + C.red, borderRadius: 6, padding: "9px 18px", fontWeight: 600 };
 const btnDangerSm = { background: "transparent", color: C.red, border: "1px solid " + C.red, borderRadius: 6, padding: "5px 10px", fontWeight: 600, fontSize: 12, cursor: "pointer" };
+// Extracts the storage object path from a Supabase public URL for a given bucket
 function extractStoragePath(url, bucket) {
     if (!url)
         return null;
@@ -41,6 +42,7 @@ function extractStoragePath(url, bucket) {
         return null;
     return url.slice(idx + marker.length);
 }
+// Fetches an image URL and converts it to a base64 data URL for PDF embedding
 async function loadImageAsDataURL(url) {
     try {
         const res = await fetch(url);
@@ -56,6 +58,7 @@ async function loadImageAsDataURL(url) {
         return null;
     }
 }
+// Gets natural pixel dimensions of a loaded image so it can be scaled proportionally in the PDF
 function getImageSize(dataUrl) {
     return new Promise((resolve) => {
         const img = new Image();
@@ -64,6 +67,7 @@ function getImageSize(dataUrl) {
         img.src = dataUrl;
     });
 }
+// Builds a letterhead-styled PDF report for an inspection (title, address, sections, embedded photos)
 async function buildInspectionReportPdf(insp, propertyAddress, contractorNameFn) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: "pt", format: "letter" });
@@ -138,6 +142,8 @@ async function buildInspectionReportPdf(insp, propertyAddress, contractorNameFn)
     }
     return doc.output("blob");
 }
+// Opens the device's mail app via a temporary anchor click, which is more reliable
+// on mobile browsers than setting window.location.href directly (which can silently fail).
 function openMailto(mailtoUrl) {
     try {
         const link = document.createElement("a");
@@ -151,6 +157,7 @@ function openMailto(mailtoUrl) {
         alert("Couldn't open your email app. Please make sure a mail app is set up on this device.");
     }
 }
+// Retries a Supabase call a few times before giving up, to smooth over brief connection drops
 async function withRetry(fn, attempts = 3, delayMs = 1000) {
     let lastError = null;
     for (let i = 0; i < attempts; i++) {
@@ -338,6 +345,8 @@ function App() {
     const openModal = (t) => { setModal(t); setForm({}); };
     const closeModal = () => { setModal(null); setForm({}); };
     const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
+    // Some phones hand back an empty/broken file when the camera capture fails to save properly.
+    // This catches that immediately so the person can retake the photo before trying to log anything.
     const handlePhotoSelect = (e, key) => {
         const file = e.target.files[0];
         if (!file) {
@@ -550,6 +559,7 @@ function App() {
         showErr(error);
         setDamages(ds => ds.map(d => d.id === id ? { ...d, status } : d));
     };
+    // ---- DELETE FUNCTIONS ----
     const deleteProperty = async (p) => {
         if (!window.confirm(`Delete property "${p.address}"?\n\nThis does not automatically delete related repairs, damages, rent history, or inspections for this property — you may want to remove those first.`))
             return;
@@ -1101,4 +1111,4 @@ function App() {
 ReactDOM.render(React.createElement(App, null), document.getElementById("root"));
 </script>
 </body>
-  </html>
+</html>
