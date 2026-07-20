@@ -1499,3 +1499,26 @@ function App() {
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
                 React.createElement("option", { value: "" }, "Select property\u2026"),
  
+properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("input", { style: inp, placeholder: "Title", value: form.noticeTitle || "", onChange: e => setF("noticeTitle", e.target.value) }),
+            React.createElement("select", { style: inp, value: form.noticeType || "", onChange: e => setF("noticeType", e.target.value) },
+                React.createElement("option", { value: "" }, "Select Notice Type\u2026"),
+                ["Notice to Enter", "Notice to Vacate", "Lease Violation", "Late Rent", "Other"].map(t => React.createElement("option", { key: t, value: t }, t))),
+            React.createElement("input", { style: inp, type: "file", accept: "image/*,application/pdf", onChange: e => setF("noticeFile", e.target.files[0]) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: addNotice }, "Upload"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "contract" && (React.createElement(Modal, { title: "Upload Contract", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select property\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("input", { style: inp, placeholder: "Title", value: form.contractTitle || "", onChange: e => setF("contractTitle", e.target.value) }),
+            React.createElement("input", { style: inp, type: "file", accept: "image/*,application/pdf", onChange: e => setF("contractFile", e.target.files[0]) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: addContract }, "Upload"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel"))))));
+}
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
