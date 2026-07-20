@@ -300,6 +300,1524 @@ async function buildPropertyReportPdf(p, pRepairs, pDamages, pRent, pInspections
         y += 16;
     }
     return doc.output("blob");
+}
+// Opens the device's mail app via a temporary anchor click, which is more reliable
+// on mobile browsers than setting window.location.href directly (which can silently fail).
+function openMailto(mailtoUrl) {
+    try {
+        const link = document.createElement("a");
+        link.href = mailtoUrl;
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+    catch (e) {
+        alert("Couldn't open your email app. Please make sure a mail app is set up on this device.");
+    }
+}
+// Retries a Supabase call a few times before giving up, to smooth over brief connection drops
+async function withRetry(fn, attempts = 3, delayMs = 1000) {
+    let lastError = null;
+    for (let i = 0; i < attempts; i++) {
+        const result = await fn();
+        if (!result.error)
+            return result;
+        lastError = result.error;
+        await new Promise(r => setTimeout(r, delayMs));
+    }
+    return { error: lastError };
+}
+function PhotoPicker({ idPrefix, label, file, onSelect, resetKey }) {
+    return (React.createElement("div", null,
+        React.createElement("label", { style: { fontSize: 12, color: C.muted, display: "block", marginBottom: 4 } }, label),
+        React.createElement("div", { style: { display: "flex", gap: 10, marginBottom: 6 } },
+            React.createElement("label", { htmlFor: idPrefix + "-camera", style: { ...btnS, flex: 1, textAlign: "center", cursor: "pointer", display: "block", boxSizing: "border-box" } }, "Camera"),
+            React.createElement("input", { key: idPrefix + "-camera-" + resetKey, id: idPrefix + "-camera", style: { display: "none" }, type: "file", accept: "image/*", capture: "environment", onChange: onSelect }),
+            React.createElement("label", { htmlFor: idPrefix + "-gallery", style: { ...btnS, flex: 1, textAlign: "center", cursor: "pointer", display: "block", boxSizing: "border-box" } }, "Gallery"),
+            React.createElement("input", { key: idPrefix + "-gallery-" + resetKey, id: idPrefix + "-gallery", style: { display: "none" }, type: "file", accept: "image/*", onChange: onSelect })),
+        file && React.createElement("div", { style: { fontSize: 12, color: C.green, marginBottom: 10 } },
+            "\u2713 Photo selected: ",
+            file.name)));
+}
+function Modal({ title, onClose, children }) {
+    return (React.createElement("div", { style: { position: "fixed", inset: 0, background: "#0006", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" } },
+        React.createElement("div", { style: { background: "#fff", borderRadius: 12, padding: 24, width: 460, maxWidth: "92vw", maxHeight: "85vh", overflowY: "auto" } },
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 16 } },
+                React.createElement("h3", { style: { margin: 0, color: C.navy } }, title),
+                React.createElement("button", { onClick: onClose, style: { background: "none", border: "none", fontSize: 22 } }, "\u00D7")),
+            children)));
+}
+function AuthScreen() {
+    const [mode, setMode] = useState("login");
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [error, setError] = useState("");
+    const [loading, setLoading] = useState(false);
+    const submit = async () => {
+        setError("");
+        setLoading(true);
+        if (mode === "login") {
+            const { error } = await sb.auth.signInWithPassword({ email, password });
+            if (error)
+                setError(error.message);
+        }
+        else if (mode === "signup") {
+            const { error } = await sb.auth.signUp({ email, password });
+            if (error)
+                setError(error.message);
+            else
+                setError("Account created! Check your email to confirm, then log in.");
+        }
+        else if (mode === "reset") {
+            const { error } = await sb.auth.resetPasswordForEmail(email);
+            if (error)
+                setError(error.message);
+            else
+                setError("Password reset email sent! Check your inbox.");
+        }
+        setLoading(false);
+    };
+    return (React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: C.bg } },
+        React.createElement("div", { style: { background: "#fff", padding: 32, borderRadius: 12, width: 360, maxWidth: "90vw", boxShadow: "0 4px 20px #0001" } },
+            React.createElement("h2", { style: { color: C.navy, marginBottom: 4 } }, "PropTrack"),
+            React.createElement("div", { style: { color: C.muted, marginBottom: 20, fontSize: 14 } }, mode === "login" ? "Log in to your account" : mode === "signup" ? "Create a new account" : "Reset your password"),
+            React.createElement("input", { style: inp, type: "email", placeholder: "Email", value: email, onChange: e => setEmail(e.target.value) }),
+            mode !== "reset" && React.createElement("input", { style: inp, type: "password", placeholder: "Password", value: password, onChange: e => setPassword(e.target.value) }),
+            error && React.createElement("div", { style: { color: (error.includes("created") || error.includes("sent")) ? C.green : C.red, fontSize: 13, marginBottom: 10 } }, error),
+            React.createElement("button", { style: { ...btnP, width: "100%", marginBottom: 10 }, onClick: submit, disabled: loading }, loading ? "Please wait..." : mode === "login" ? "Log In" : mode === "signup" ? "Sign Up" : "Send Reset Email"),
+            React.createElement("div", { style: { textAlign: "center", fontSize: 13, color: C.muted } },
+                mode === "login" && (React.createElement(React.Fragment, null,
+                    "Don't have an account? ",
+                    React.createElement("span", { style: { color: C.blue, cursor: "pointer" }, onClick: () => { setMode("signup"); setError(""); } }, "Sign up"),
+                    React.createElement("div", { style: { marginTop: 8 } },
+                        React.createElement("span", { style: { color: C.blue, cursor: "pointer" }, onClick: () => { setMode("reset"); setError(""); } }, "Forgot password?")))),
+                mode === "signup" && React.createElement("span", null,
+                    "Already have an account? ",
+                    React.createElement("span", { style: { color: C.blue, cursor: "pointer" }, onClick: () => { setMode("login"); setError(""); } }, "Log in")),
+                mode === "reset" && React.createElement("span", { style: { color: C.blue, cursor: "pointer" }, onClick: () => { setMode("login"); setError(""); } }, "Back to login")))));
+}
+function App() {
+    const [session, setSession] = useState(null);
+    const [checkingSession, setCheckingSession] = useState(true);
+    const [tab, setTab] = useState(() => { try {
+        return sessionStorage.getItem("pt_tab") || "Dashboard";
+    }
+    catch (e) {
+        return "Dashboard";
+    } });
+    const [properties, setProperties] = useState([]);
+    const [repairs, setRepairs] = useState([]);
+    const [rentHistory, setRentHistory] = useState([]);
+    const [damages, setDamages] = useState([]);
+    const [contractors, setContractors] = useState([]);
+    const [inspections, setInspections] = useState([]);
+    const [notices, setNotices] = useState([]);
+    const [contracts, setContracts] = useState([]);
+    const [modal, setModal] = useState(() => { try {
+        return sessionStorage.getItem("pt_modal") || null;
+    }
+    catch (e) {
+        return null;
+    } });
+    const [form, setForm] = useState(() => { try {
+        const saved = sessionStorage.getItem("pt_form");
+        return saved ? JSON.parse(saved) : {};
+    }
+    catch (e) {
+        return {};
+    } });
+    const [loadingData, setLoadingData] = useState(false);
+    const [viewInspection, setViewInspection] = useState(() => { try {
+        const saved = sessionStorage.getItem("pt_viewInspection");
+        return saved ? Number(saved) : null;
+    }
+    catch (e) {
+        return null;
+    } });
+    const [viewProperty, setViewProperty] = useState(() => { try {
+        const saved = sessionStorage.getItem("pt_viewProperty");
+        return saved ? Number(saved) : null;
+    }
+    catch (e) {
+        return null;
+    } });
+    const [printRepair, setPrintRepair] = useState(null);
+    const [printInspection, setPrintInspection] = useState(null);
+    const [printProperty, setPrintProperty] = useState(null);
+    useEffect(() => {
+        try {
+            sessionStorage.setItem("pt_tab", tab);
+        }
+        catch (e) { }
+    }, [tab]);
+    useEffect(() => {
+        try {
+            if (viewInspection)
+                sessionStorage.setItem("pt_viewInspection", String(viewInspection));
+            else
+                sessionStorage.removeItem("pt_viewInspection");
+        }
+        catch (e) { }
+    }, [viewInspection]);
+    useEffect(() => {
+        try {
+            if (viewProperty)
+                sessionStorage.setItem("pt_viewProperty", String(viewProperty));
+            else
+                sessionStorage.removeItem("pt_viewProperty");
+        }
+        catch (e) { }
+    }, [viewProperty]);
+    useEffect(() => {
+        try {
+            if (modal)
+                sessionStorage.setItem("pt_modal", modal);
+            else
+                sessionStorage.removeItem("pt_modal");
+        }
+        catch (e) { }
+    }, [modal]);
+    useEffect(() => {
+        try {
+            const safeForm = {};
+            Object.keys(form).forEach(k => {
+                if (form[k] instanceof File)
+                    return;
+                safeForm[k] = form[k];
+            });
+            sessionStorage.setItem("pt_form", JSON.stringify(safeForm));
+        }
+        catch (e) { }
+    }, [form]);
+    useEffect(() => {
+        sb.auth.getSession().then(({ data }) => {
+            setSession(data.session);
+            setCheckingSession(false);
+        });
+        const { data: listener } = sb.auth.onAuthStateChange((_event, session) => {
+            setSession(session);
+        });
+        return () => listener.subscription.unsubscribe();
+    }, []);
+    useEffect(() => {
+        if (session)
+            loadAllData();
+    }, [session]);
+    const loadAllData = async () => {
+        setLoadingData(true);
+        const [p, r, rh, d, c, ins, nt, ct] = await Promise.all([
+            sb.from("properties").select("*").order("id"),
+            sb.from("repairs").select("*").order("id"),
+            sb.from("rent_history").select("*").order("id"),
+            sb.from("damages").select("*").order("id"),
+            sb.from("contractors").select("*").order("id"),
+            sb.from("inspections").select("*").order("id"),
+            sb.from("notices").select("*").order("id"),
+            sb.from("contracts").select("*").order("id"),
+        ]);
+        if (p.data)
+            setProperties(p.data);
+        if (r.data)
+            setRepairs(r.data);
+        if (rh.data)
+            setRentHistory(rh.data);
+        if (d.data)
+            setDamages(d.data);
+        if (c.data)
+            setContractors(c.data);
+        if (ins.data)
+            setInspections(ins.data);
+        if (nt.data)
+            setNotices(nt.data);
+        if (ct.data)
+            setContracts(ct.data);
+        setLoadingData(false);
+    };
+    const [resetKey, setResetKey] = useState(0);
+    const openModal = (t) => { setModal(t); setForm({}); setResetKey(k => k + 1); };
+    const closeModal = () => { setModal(null); setForm({}); setResetKey(k => k + 1); };
+    const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
+    // Some phones hand back an empty/broken file when the camera capture fails to save properly.
+    // This catches that immediately so the person can retake the photo before trying to log anything.
+    const handlePhotoSelect = (e, key) => {
+        const file = e.target.files[0];
+        if (!file) {
+            setF(key, null);
+            return;
+        }
+        if (file.size === 0) {
+            alert("That photo didn't capture properly (the file came back empty). Please try taking the picture again.");
+            e.target.value = "";
+            setF(key, null);
+            return;
+        }
+        setF(key, file);
+    };
+    const userId = () => session.user.id;
+    const showErr = (error) => {
+        if (error)
+            alert("Something went wrong: " + error.message);
+    };
+    const addProperty = async () => {
+        if (!form.address || !form.tenant)
+            return;
+        const { data, error } = await sb.from("properties").insert({ user_id: userId(), address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null }).select();
+        showErr(error);
+        if (data)
+            setProperties(p => [...p, ...data]);
+        closeModal();
+    };
+    const openEditProperty = (p) => {
+        setForm({ propId: p.id, address: p.address, tenant: p.tenant, rent: p.rent, leaseEnd: p.lease_end || "" });
+        setModal("editProperty");
+    };
+    const updateProperty = async () => {
+        if (!form.propId || !form.address || !form.tenant)
+            return;
+        const { error } = await sb.from("properties").update({ address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null }).eq("id", form.propId);
+        showErr(error);
+        if (!error) {
+            setProperties(ps => ps.map(p => p.id === form.propId ? { ...p, address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null } : p));
+            closeModal();
+        }
+    };
+    const addRepair = async () => {
+        if (!form.title || !form.propertyId)
+            return;
+        let photoUrl = null;
+        if (form.photoFile) {
+            const fileName = `${userId()}/${Date.now()}_${form.photoFile.name}`;
+            const { error: upErr } = await withRetry(() => sb.storage.from("repair-photos").upload(fileName, form.photoFile));
+            if (!upErr) {
+                const { data: urlData } = sb.storage.from("repair-photos").getPublicUrl(fileName);
+                photoUrl = urlData.publicUrl;
+            }
+            else {
+                alert("The photo upload had trouble connecting, so this repair will be saved without it. You can add a photo later if needed.");
+            }
+        }
+        const { data, error } = await withRetry(() => sb.from("repairs").insert({ user_id: userId(), property_id: Number(form.propertyId), title: form.title, priority: form.priority || "Medium", status: "Open", cost: Number(form.cost) || 0, notes: form.notes || "", trade: form.trade || "General", photo_url: photoUrl, contractor_id: form.repairContractorId ? Number(form.repairContractorId) : null }).select());
+        showErr(error);
+        if (data)
+            setRepairs(r => [...r, ...data]);
+        closeModal();
+    };
+    const openEditRepair = (r) => {
+        setForm({ repairId: r.id, propertyId: String(r.property_id), title: r.title, trade: r.trade || "", priority: r.priority, cost: r.cost, notes: r.notes || "", repairContractorId: r.contractor_id ? String(r.contractor_id) : "" });
+        setModal("editRepair");
+    };
+    const updateRepair = async () => {
+        if (!form.repairId || !form.title || !form.propertyId)
+            return;
+        const { error } = await withRetry(() => sb.from("repairs").update({ property_id: Number(form.propertyId), title: form.title, trade: form.trade || "General", priority: form.priority || "Medium", cost: Number(form.cost) || 0, notes: form.notes || "", contractor_id: form.repairContractorId ? Number(form.repairContractorId) : null }).eq("id", form.repairId));
+        showErr(error);
+        if (!error) {
+            setRepairs(rs => rs.map(r => r.id === form.repairId ? { ...r, property_id: Number(form.propertyId), title: form.title, trade: form.trade || "General", priority: form.priority || "Medium", cost: Number(form.cost) || 0, notes: form.notes || "", contractor_id: form.repairContractorId ? Number(form.repairContractorId) : null } : r));
+            closeModal();
+        }
+    };
+    const addRentIncrease = async () => {
+        if (!form.propertyId || !form.newRent)
+            return;
+        const prop = properties.find(p => p.id === Number(form.propertyId));
+        const { data, error } = await sb.from("rent_history").insert({ user_id: userId(), property_id: Number(form.propertyId), old_rent: prop ? prop.rent : 0, new_rent: Number(form.newRent), effective_date: form.effectiveDate || null, reason: form.reason || "" }).select();
+        showErr(error);
+        if (data) {
+            setRentHistory(h => [...h, ...data]);
+            await sb.from("properties").update({ rent: Number(form.newRent) }).eq("id", Number(form.propertyId));
+            setProperties(ps => ps.map(p => p.id === Number(form.propertyId) ? { ...p, rent: Number(form.newRent) } : p));
+        }
+        closeModal();
+    };
+    const addDamage = async () => {
+        if (!form.propertyId || !form.description)
+            return;
+        let photoUrl = null;
+        if (form.damagePhotoFile) {
+            const fileName = `${userId()}/${Date.now()}_${form.damagePhotoFile.name}`;
+            const { error: upErr } = await withRetry(() => sb.storage.from("repair-photos").upload(fileName, form.damagePhotoFile));
+            if (!upErr) {
+                const { data: urlData } = sb.storage.from("repair-photos").getPublicUrl(fileName);
+                photoUrl = urlData.publicUrl;
+            }
+            else {
+                alert("The photo upload had trouble connecting, so this damage record will be saved without it. You can add a photo later if needed.");
+            }
+        }
+        const { data, error } = await withRetry(() => sb.from("damages").insert({ user_id: userId(), property_id: Number(form.propertyId), description: form.description, severity: form.severity || "Minor", estimated_cost: Number(form.estimatedCost) || 0, status: "Pending", photo_url: photoUrl }).select());
+        showErr(error);
+        if (data)
+            setDamages(d => [...d, ...data]);
+        closeModal();
+    };
+    const openEditDamage = (d) => {
+        setForm({ damageId: d.id, propertyId: String(d.property_id), description: d.description, severity: d.severity, estimatedCost: d.estimated_cost });
+        setModal("editDamage");
+    };
+    const updateDamage = async () => {
+        if (!form.damageId || !form.propertyId || !form.description)
+            return;
+        const { error } = await withRetry(() => sb.from("damages").update({ property_id: Number(form.propertyId), description: form.description, severity: form.severity || "Minor", estimated_cost: Number(form.estimatedCost) || 0 }).eq("id", form.damageId));
+        showErr(error);
+        if (!error) {
+            setDamages(ds => ds.map(d => d.id === form.damageId ? { ...d, property_id: Number(form.propertyId), description: form.description, severity: form.severity || "Minor", estimated_cost: Number(form.estimatedCost) || 0 } : d));
+            closeModal();
+        }
+    };
+    const addContractor = async () => {
+        if (!form.name || !form.trade)
+            return;
+        const { data, error } = await sb.from("contractors").insert({ user_id: userId(), name: form.name, trade: form.trade, phone: form.phone || "", email: form.cemail || "", notes: form.cnotes || "" }).select();
+        showErr(error);
+        if (data)
+            setContractors(c => [...c, ...data]);
+        closeModal();
+    };
+    const openEditContractor = (c) => {
+        setForm({ contractorId: c.id, name: c.name, trade: c.trade, phone: c.phone || "", cemail: c.email || "", cnotes: c.notes || "" });
+        setModal("editContractor");
+    };
+    const updateContractor = async () => {
+        if (!form.contractorId || !form.name || !form.trade)
+            return;
+        const { error } = await sb.from("contractors").update({ name: form.name, trade: form.trade, phone: form.phone || "", email: form.cemail || "", notes: form.cnotes || "" }).eq("id", form.contractorId);
+        showErr(error);
+        if (!error) {
+            setContractors(cs => cs.map(c => c.id === form.contractorId ? { ...c, name: form.name, trade: form.trade, phone: form.phone || "", email: form.cemail || "", notes: form.cnotes || "" } : c));
+            closeModal();
+        }
+    };
+    const addInspection = async () => {
+        if (!form.propertyId || !form.inspectionType)
+            return;
+        const { data, error } = await sb.from("inspections").insert({ user_id: userId(), property_id: Number(form.propertyId), inspection_type: form.inspectionType, inspection_date: new Date().toISOString().slice(0, 10), sections: [] }).select();
+        showErr(error);
+        if (data)
+            setInspections(i => [...i, ...data]);
+        closeModal();
+    };
+    const addInspectionSection = async (inspectionId) => {
+        if (!form.sectionName)
+            return;
+        const insp = inspections.find(i => i.id === inspectionId);
+        let photoUrl = null;
+        if (form.sectionPhoto) {
+            const fileName = `${userId()}/${Date.now()}_${form.sectionPhoto.name}`;
+            const { error: upErr } = await withRetry(() => sb.storage.from("repair-photos").upload(fileName, form.sectionPhoto));
+            if (!upErr) {
+                const { data: urlData } = sb.storage.from("repair-photos").getPublicUrl(fileName);
+                photoUrl = urlData.publicUrl;
+            }
+            else {
+                alert("The photo upload had trouble connecting, so this section will be saved without it. You can try adding a photo again after.");
+            }
+        }
+        const newSections = [...(insp.sections || []), { name: form.sectionName, contractorId: form.sectionContractor || null, photoUrl, notes: form.sectionNotes || "" }];
+        const { error } = await withRetry(() => sb.from("inspections").update({ sections: newSections }).eq("id", inspectionId));
+        showErr(error);
+        if (!error) {
+            setInspections(insps => insps.map(i => i.id === inspectionId ? { ...i, sections: newSections } : i));
+            setForm({});
+            setResetKey(k => k + 1);
+        }
+    };
+    const openEditSection = (insp, index) => {
+        const sec = insp.sections[index];
+        setForm({ editingInspectionId: insp.id, editingSectionIndex: index, sectionName: sec.name, sectionNotes: sec.notes || "", sectionContractor: sec.contractorId || "" });
+        setModal("editSection");
+    };
+    const updateInspectionSection = async () => {
+        if (form.editingInspectionId == null || form.editingSectionIndex == null || !form.sectionName)
+            return;
+        const insp = inspections.find(i => i.id === form.editingInspectionId);
+        if (!insp)
+            return;
+        const newSections = insp.sections.map((sec, i) => i === form.editingSectionIndex ? { ...sec, name: form.sectionName, contractorId: form.sectionContractor || null, notes: form.sectionNotes || "" } : sec);
+        const { error } = await withRetry(() => sb.from("inspections").update({ sections: newSections }).eq("id", form.editingInspectionId));
+        showErr(error);
+        if (!error) {
+            setInspections(insps => insps.map(i => i.id === form.editingInspectionId ? { ...i, sections: newSections } : i));
+            closeModal();
+        }
+    };
+    const addNotice = async () => {
+        if (!form.propertyId || !form.noticeFile)
+            return;
+        const fileName = `${userId()}/${Date.now()}_${form.noticeFile.name}`;
+        const { error: upErr } = await withRetry(() => sb.storage.from("notices").upload(fileName, form.noticeFile, { contentType: form.noticeFile.type || undefined }));
+        if (upErr) {
+            showErr(upErr);
+            return;
+        }
+        const { data: urlData } = sb.storage.from("notices").getPublicUrl(fileName);
+        const { data, error } = await withRetry(() => sb.from("notices").insert({ user_id: userId(), property_id: Number(form.propertyId), title: form.noticeTitle || form.noticeFile.name, notice_type: form.noticeType || "Other", file_url: urlData.publicUrl }).select());
+        showErr(error);
+        if (data)
+            setNotices(n => [...n, ...data]);
+        closeModal();
+    };
+    const addContract = async () => {
+        if (!form.propertyId || !form.contractFile)
+            return;
+        const fileName = `${userId()}/${Date.now()}_${form.contractFile.name}`;
+        const { error: upErr } = await withRetry(() => sb.storage.from("notices").upload(fileName, form.contractFile, { contentType: form.contractFile.type || undefined }));
+        if (upErr) {
+            showErr(upErr);
+            return;
+        }
+        const { data: urlData } = sb.storage.from("notices").getPublicUrl(fileName);
+        const { data, error } = await withRetry(() => sb.from("contracts").insert({ user_id: userId(), property_id: Number(form.propertyId), title: form.contractTitle || form.contractFile.name, file_url: urlData.publicUrl }).select());
+        showErr(error);
+        if (data)
+            setContracts(c => [...c, ...data]);
+        closeModal();
+    };
+    const updateRepairStatus = async (id, status) => {
+        const { error } = await sb.from("repairs").update({ status }).eq("id", id);
+        showErr(error);
+        setRepairs(rs => rs.map(r => r.id === id ? { ...r, status } : r));
+    };
+    const updateDamageStatus = async (id, status) => {
+        const { error } = await sb.from("damages").update({ status }).eq("id", id);
+        showErr(error);
+        setDamages(ds => ds.map(d => d.id === id ? { ...d, status } : d));
+    };
+    // ---- DELETE FUNCTIONS ----
+    const deleteProperty = async (p) => {
+        if (!window.confirm(`Delete property "${p.address}"?\n\nThis does not automatically delete related repairs, damages, rent history, or inspections for this property — you may want to remove those first.`))
+            return;
+        const { error } = await sb.from("properties").delete().eq("id", p.id);
+        showErr(error);
+        if (!error)
+            setProperties(ps => ps.filter(x => x.id !== p.id));
+    };
+    const deleteRepair = async (r) => {
+        if (!window.confirm(`Delete repair "${r.title}"? This cannot be undone.`))
+            return;
+        if (r.photo_url) {
+            const path = extractStoragePath(r.photo_url, "repair-photos");
+            if (path)
+                await sb.storage.from("repair-photos").remove([path]);
+        }
+        const { error } = await sb.from("repairs").delete().eq("id", r.id);
+        showErr(error);
+        if (!error)
+            setRepairs(rs => rs.filter(x => x.id !== r.id));
+    };
+    const deleteRentRecord = async (r) => {
+        if (!window.confirm("Delete this rent history record?"))
+            return;
+        const { error } = await sb.from("rent_history").delete().eq("id", r.id);
+        showErr(error);
+        if (!error)
+            setRentHistory(hs => hs.filter(x => x.id !== r.id));
+    };
+    const deleteDamage = async (d) => {
+        if (!window.confirm("Delete this damage record?"))
+            return;
+        if (d.photo_url) {
+            const path = extractStoragePath(d.photo_url, "repair-photos");
+            if (path)
+                await sb.storage.from("repair-photos").remove([path]);
+        }
+        const { error } = await sb.from("damages").delete().eq("id", d.id);
+        showErr(error);
+        if (!error)
+            setDamages(ds => ds.filter(x => x.id !== d.id));
+    };
+    const deleteContractor = async (c) => {
+        if (!window.confirm(`Delete contractor "${c.name}"?`))
+            return;
+        const { error } = await sb.from("contractors").delete().eq("id", c.id);
+        showErr(error);
+        if (!error)
+            setContractors(cs => cs.filter(x => x.id !== c.id));
+    };
+    const deleteNotice = async (n) => {
+        if (!window.confirm(`Delete notice "${n.title}"?`))
+            return;
+        const path = extractStoragePath(n.file_url, "notices");
+        if (path)
+            await sb.storage.from("notices").remove([path]);
+        const { error } = await sb.from("notices").delete().eq("id", n.id);
+        showErr(error);
+        if (!error)
+            setNotices(ns => ns.filter(x => x.id !== n.id));
+    };
+    const deleteContract = async (ct) => {
+        if (!window.confirm(`Delete contract "${ct.title}"?`))
+            return;
+        const path = extractStoragePath(ct.file_url, "notices");
+        if (path)
+            await sb.storage.from("notices").remove([path]);
+        const { error } = await sb.from("contracts").delete().eq("id", ct.id);
+        showErr(error);
+        if (!error)
+            setContracts(cs => cs.filter(x => x.id !== ct.id));
+    };
+    const deleteInspection = async (insp) => {
+        if (!window.confirm(`Delete inspection "${insp.inspection_type}"? This will also delete all of its sections and photos.`))
+            return;
+        const paths = (insp.sections || []).map(s => extractStoragePath(s.photoUrl, "repair-photos")).filter(Boolean);
+        if (paths.length)
+            await sb.storage.from("repair-photos").remove(paths);
+        const { error } = await sb.from("inspections").delete().eq("id", insp.id);
+        showErr(error);
+        if (!error) {
+            setInspections(is => is.filter(x => x.id !== insp.id));
+            if (viewInspection === insp.id)
+                setViewInspection(null);
+        }
+    };
+    const deleteInspectionSection = async (insp, index) => {
+        if (!window.confirm("Delete this section?"))
+            return;
+        const sec = insp.sections[index];
+        if (sec.photoUrl) {
+            const path = extractStoragePath(sec.photoUrl, "repair-photos");
+            if (path)
+                await sb.storage.from("repair-photos").remove([path]);
+        }
+        const newSections = insp.sections.filter((_, i) => i !== index);
+        const { error } = await sb.from("inspections").update({ sections: newSections }).eq("id", insp.id);
+        showErr(error);
+        if (!error)
+            setInspections(is => is.map(i => i.id === insp.id ? { ...i, sections: newSections } : i));
+    };
+    const propName = (id) => { const p = properties.find(p => p.id === id); return p ? p.address.split(",")[0] : "Unknown"; };
+    const contractorName = (id) => { const c = contractors.find(c => c.id === Number(id)); return c ? `${c.name} (${c.phone})` : "—"; };
+    const contractorsForTrade = (trade) => contractors.filter(c => c.trade === trade);
+    const openRepairs = repairs.filter(r => r.status !== "Resolved").length;
+    const monthlyRent = properties.reduce((s, p) => s + Number(p.rent), 0);
+    const logout = async () => {
+        try {
+            sessionStorage.removeItem("pt_tab");
+            sessionStorage.removeItem("pt_viewInspection");
+            sessionStorage.removeItem("pt_viewProperty");
+            sessionStorage.removeItem("pt_form");
+            sessionStorage.removeItem("pt_modal");
+        }
+        catch (e) { }
+        await sb.auth.signOut();
+    };
+    const emailRepair = (r) => {
+        const contractor = r.contractor_id ? contractors.find(c => c.id === Number(r.contractor_id)) : null;
+        const toEmail = contractor && contractor.email ? contractor.email : "";
+        const subject = encodeURIComponent(`Repair Request: ${r.title}`);
+        const body = encodeURIComponent(`Property: ${propName(r.property_id)}\nIssue: ${r.title}\nPriority: ${r.priority}\nTrade: ${r.trade || "General"}\n${contractor ? "Assigned Contractor: " + contractor.name + " (" + contractor.phone + ")\n" : ""}Notes: ${r.notes || "None"}\n${r.photo_url ? "Photo: " + r.photo_url : ""}`);
+        openMailto(`mailto:${toEmail}?subject=${subject}&body=${body}`);
+    };
+    const emailInspection = async (insp) => {
+        const prop = properties.find(p => p.id === insp.property_id);
+        const fullAddress = prop ? prop.address : "Unknown property";
+        const subject = encodeURIComponent(`${insp.inspection_type} Inspection Report — ${propName(insp.property_id)}`);
+        try {
+            const pdfBlob = await buildInspectionReportPdf(insp, fullAddress, contractorName);
+            const fileName = `${userId()}/reports/${Date.now()}_inspection_${insp.id}.pdf`;
+            let upErr = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const result = await sb.storage.from("repair-photos").upload(fileName, pdfBlob, { contentType: "application/pdf", upsert: true });
+                upErr = result.error;
+                if (!upErr)
+                    break;
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            if (upErr)
+                throw upErr;
+            const { data: urlData } = sb.storage.from("repair-photos").getPublicUrl(fileName);
+            const reportUrl = urlData.publicUrl;
+            const body = encodeURIComponent(`Here is the ${insp.inspection_type} inspection report for ${fullAddress}:\n\n${reportUrl}`);
+            openMailto(`mailto:?subject=${subject}&body=${body}`);
+        }
+        catch (e) {
+            alert("Couldn't generate the report PDF after a few tries (" + (e.message || e) + "). This is usually a brief connection hiccup — check your signal/WiFi and try again. Falling back to a plain-text email for now.");
+            const sectionLines = (insp.sections || []).map(sec => {
+                const contractorLine = sec.contractorId ? ` — ${contractorName(sec.contractorId)}` : "";
+                const notesLine = sec.notes ? `\n  Notes: ${sec.notes}` : "";
+                const photoLine = sec.photoUrl ? `\n  Photo: ${sec.photoUrl}` : "";
+                return `- ${sec.name}${contractorLine}${notesLine}${photoLine}`;
+            }).join("\n");
+            const body = encodeURIComponent(`Property: ${fullAddress}\nInspection Type: ${insp.inspection_type}\nDate: ${insp.inspection_date}\n\nSections:\n${sectionLines || "None"}`);
+            openMailto(`mailto:?subject=${subject}&body=${body}`);
+        }
+    };
+    const emailProperty = async (p) => {
+        const subject = encodeURIComponent(`Property Report — ${p.address}`);
+        const pRepairs = repairs.filter(r => r.property_id === p.id);
+        const pDamages = damages.filter(d => d.property_id === p.id);
+        const pRent = rentHistory.filter(r => r.property_id === p.id);
+        const pInspections = inspections.filter(i => i.property_id === p.id);
+        const pNotices = notices.filter(n => n.property_id === p.id);
+        const pContracts = contracts.filter(ct => ct.property_id === p.id);
+        try {
+            const pdfBlob = await buildPropertyReportPdf(p, pRepairs, pDamages, pRent, pInspections, pNotices, pContracts, contractorName);
+            const fileName = `${userId()}/reports/${Date.now()}_property_${p.id}.pdf`;
+            let upErr = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const result = await sb.storage.from("repair-photos").upload(fileName, pdfBlob, { contentType: "application/pdf", upsert: true });
+                upErr = result.error;
+                if (!upErr)
+                    break;
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            if (upErr)
+                throw upErr;
+            const { data: urlData } = sb.storage.from("repair-photos").getPublicUrl(fileName);
+            const reportUrl = urlData.publicUrl;
+            const body = encodeURIComponent(`Here is the compiled property report for ${p.address}:\n\n${reportUrl}`);
+            openMailto(`mailto:?subject=${subject}&body=${body}`);
+        }
+        catch (e) {
+            alert("Couldn't generate the property report PDF (" + (e.message || e) + "). Please check your connection and try again.");
+        }
+    };
+    if (checkingSession) {
+        return React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", color: C.muted } }, "Loading...");
+    }
+    if (!session) {
+        return React.createElement(AuthScreen, null);
+    }
+    const TABS = ["Dashboard", "Properties", "Repairs", "Rent History", "Damage Log", "Inspections", "Contractors", "Notices", "Contracts"];
+    return (React.createElement("div", { style: { display: "flex", minHeight: "100vh" } },
+        React.createElement("div", { className: "no-print", style: { width: 200, background: C.navy, padding: 20, color: "#fff", flexShrink: 0, display: "flex", flexDirection: "column" } },
+            React.createElement("h2", { style: { fontSize: 18, marginBottom: 20 } }, "PropTrack"),
+            TABS.map(t => (React.createElement("div", { key: t, onClick: () => { setTab(t); setViewInspection(null); setViewProperty(null); }, style: { padding: "10px 0", cursor: "pointer", color: tab === t ? C.accent : "#fff", fontSize: 14 } }, t))),
+            React.createElement("div", { style: { flex: 1 } }),
+            React.createElement("div", { style: { fontSize: 12, color: "#8fa0c0", marginBottom: 8, wordBreak: "break-all" } }, session.user.email),
+            React.createElement("button", { style: { ...btnS, color: "#fff", borderColor: "#3a4a6b", fontSize: 13, padding: "6px 12px" }, onClick: logout }, "Log Out")),
+        React.createElement("div", { style: { flex: 1, padding: 24 } },
+            React.createElement("div", { className: "no-print", style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 } },
+                React.createElement("h1", { style: { color: C.navy } }, tab),
+                tab === "Properties" && !viewProperty && React.createElement("button", { style: btnP, onClick: () => openModal("property") }, "+ Add Property"),
+                tab === "Repairs" && React.createElement("button", { style: btnP, onClick: () => openModal("repair") }, "+ Log Repair"),
+                tab === "Rent History" && React.createElement("button", { style: btnP, onClick: () => openModal("rent") }, "+ Rent Increase"),
+                tab === "Damage Log" && React.createElement("button", { style: btnP, onClick: () => openModal("damage") }, "+ Log Damage"),
+                tab === "Contractors" && React.createElement("button", { style: btnP, onClick: () => openModal("contractor") }, "+ Add Contractor"),
+                tab === "Inspections" && !viewInspection && React.createElement("button", { style: btnP, onClick: () => openModal("inspection") }, "+ New Inspection"),
+                tab === "Notices" && React.createElement("button", { style: btnP, onClick: () => openModal("notice") }, "+ Upload Notice"),
+                tab === "Contracts" && React.createElement("button", { style: btnP, onClick: () => openModal("contract") }, "+ Upload Contract")),
+            loadingData && React.createElement("div", { style: { color: C.muted } }, "Loading your data..."),
+            !loadingData && tab === "Dashboard" && (React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 14 } },
+                React.createElement("div", { style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border } },
+                    React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Monthly Rent"),
+                    React.createElement("div", { style: { fontSize: 24, fontWeight: 700, color: C.green } },
+                        "$",
+                        monthlyRent)),
+                React.createElement("div", { style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border } },
+                    React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Open Repairs"),
+                    React.createElement("div", { style: { fontSize: 24, fontWeight: 700, color: C.red } }, openRepairs)),
+                React.createElement("div", { style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border } },
+                    React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Contractors"),
+                    React.createElement("div", { style: { fontSize: 24, fontWeight: 700, color: C.blue } }, contractors.length)),
+                React.createElement("div", { style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border } },
+                    React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Inspections"),
+                    React.createElement("div", { style: { fontSize: 24, fontWeight: 700, color: C.orange } }, inspections.length)))),
+            !loadingData && tab === "Properties" && !viewProperty && (properties.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No properties yet. Add your first one!") : properties.map(p => (React.createElement("div", { key: p.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
+                React.createElement("div", { onClick: () => setViewProperty(p.id), style: { cursor: "pointer", flex: 1 } },
+                    React.createElement("div", { style: { fontWeight: 700 } }, p.address),
+                    React.createElement("div", { style: { color: C.muted } },
+                        "Tenant: ",
+                        p.tenant,
+                        " \u2014 $",
+                        p.rent,
+                        "/mo ",
+                        p.lease_end ? `— Lease ends ${p.lease_end}` : "")),
+                React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                    React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditProperty(p) }, "Edit"),
+                    React.createElement("button", { style: btnDangerSm, onClick: () => deleteProperty(p) }, "Delete")))))),
+            !loadingData && tab === "Properties" && viewProperty && (() => {
+                const p = properties.find(pr => pr.id === viewProperty);
+                if (!p)
+                    return null;
+                const pRepairs = repairs.filter(r => r.property_id === p.id);
+                const pDamages = damages.filter(d => d.property_id === p.id);
+                const pRent = rentHistory.filter(r => r.property_id === p.id);
+                const pInspections = inspections.filter(i => i.property_id === p.id);
+                const pNotices = notices.filter(n => n.property_id === p.id);
+                const pContracts = contracts.filter(ct => ct.property_id === p.id);
+                return (React.createElement("div", null,
+                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 } },
+                        React.createElement("button", { style: btnS, onClick: () => setViewProperty(null) }, "\u2190 Back to Properties"),
+                        React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                            React.createElement("button", { style: { ...btnS, padding: "9px 14px" }, onClick: () => { setPrintProperty(p.id); setTimeout(() => window.print(), 100); } }, "Print"),
+                            React.createElement("button", { style: { ...btnS, padding: "9px 14px" }, onClick: () => emailProperty(p) }, "Email"))),
+                    React.createElement("h2", { style: { color: C.navy, marginBottom: 4 } }, p.address),
+                    React.createElement("div", { style: { color: C.muted, marginBottom: 20 } },
+                        "Tenant: ",
+                        p.tenant,
+                        " \u2014 $",
+                        p.rent,
+                        "/mo ",
+                        p.lease_end ? `— Lease ends ${p.lease_end}` : ""),
+                    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8 } },
+                        "Repairs (",
+                        pRepairs.length,
+                        ")"),
+                    pRepairs.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 16 } }, "No repairs logged.") : pRepairs.map(r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8 } },
+                        React.createElement("div", { style: { fontWeight: 700 } }, r.title),
+                        React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                            r.trade || "General",
+                            " \u2014 ",
+                            r.priority,
+                            " priority \u2014 ",
+                            r.status,
+                            " \u2014 $",
+                            r.cost),
+                        r.photo_url && React.createElement("img", { src: r.photo_url, style: { maxWidth: 120, borderRadius: 6, marginTop: 6, display: "block" } })))),
+                    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8, marginTop: 16 } },
+                        "Damage Log (",
+                        pDamages.length,
+                        ")"),
+                    pDamages.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 16 } }, "No damage records.") : pDamages.map(d => (React.createElement("div", { key: d.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8 } },
+                        React.createElement("div", { style: { fontWeight: 700 } }, d.description),
+                        React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                            d.severity,
+                            " \u2014 Est. $",
+                            d.estimated_cost,
+                            " \u2014 ",
+                            d.status),
+                        d.photo_url && React.createElement("img", { src: d.photo_url, style: { maxWidth: 120, borderRadius: 6, marginTop: 6, display: "block" } })))),
+                    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8, marginTop: 16 } },
+                        "Rent History (",
+                        pRent.length,
+                        ")"),
+                    pRent.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 16 } }, "No rent changes recorded.") : pRent.map(r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8 } },
+                        React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                            "$",
+                            r.old_rent,
+                            " \u2192 $",
+                            r.new_rent,
+                            " ",
+                            r.effective_date ? `(${r.effective_date})` : "",
+                            " \u2014 ",
+                            r.reason)))),
+                    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8, marginTop: 16 } },
+                        "Inspections (",
+                        pInspections.length,
+                        ")"),
+                    pInspections.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 16 } }, "No inspections recorded.") : pInspections.map(i => (React.createElement("div", { key: i.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8 } },
+                        React.createElement("div", { style: { fontWeight: 700 } }, i.inspection_type),
+                        React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                            i.inspection_date,
+                            " \u2014 ",
+                            (i.sections || []).length,
+                            " section(s)")))),
+                    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8, marginTop: 16 } },
+                        "Notices (",
+                        pNotices.length,
+                        ")"),
+                    pNotices.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 16 } }, "No notices uploaded.") : pNotices.map(n => (React.createElement("div", { key: n.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" } },
+                        React.createElement("div", null,
+                            React.createElement("div", { style: { fontWeight: 700 } }, n.title),
+                            React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                                n.notice_type,
+                                n.created_at ? ` — ${new Date(n.created_at).toLocaleDateString()}` : "")),
+                        React.createElement("a", { href: n.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View")))),
+                    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8, marginTop: 16 } },
+                        "Contracts (",
+                        pContracts.length,
+                        ")"),
+                    pContracts.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 16 } }, "No contracts uploaded.") : pContracts.map(ct => (React.createElement("div", { key: ct.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" } },
+                        React.createElement("div", null,
+                            React.createElement("div", { style: { fontWeight: 700 } }, ct.title),
+                            React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, ct.created_at ? new Date(ct.created_at).toLocaleDateString() : "")),
+                        React.createElement("a", { href: ct.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View"))))));
+            })(),
+            !loadingData && tab === "Repairs" && (repairs.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No repairs logged yet.") : repairs.map(r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
+                React.createElement("div", { style: { fontWeight: 700 } }, r.title),
+                React.createElement("div", { style: { color: C.muted, marginBottom: 8 } },
+                    propName(r.property_id),
+                    " \u2014 ",
+                    r.trade || "General",
+                    " \u2014 ",
+                    r.priority,
+                    " priority \u2014 ",
+                    r.status),
+                r.contractor_id && React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 8 } }, "Contractor: " + contractorName(r.contractor_id)),
+                r.photo_url && React.createElement("img", { src: r.photo_url, style: { maxWidth: 150, borderRadius: 6, marginBottom: 8, display: "block" } }),
+                React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                    r.status === "Open" && React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => updateRepairStatus(r.id, "In Progress") }, "Mark In Progress"),
+                    r.status === "In Progress" && React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => updateRepairStatus(r.id, "Resolved") }, "Mark Resolved"),
+                    r.status === "Resolved" && React.createElement("span", { style: { color: C.green, fontSize: 12 } }, "\u2713 Resolved"),
+                    React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => { setPrintRepair(r); setTimeout(() => window.print(), 100); } }, "Print"),
+                    React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => emailRepair(r) }, "Email"),
+                    React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditRepair(r) }, "Edit"),
+                    React.createElement("button", { style: btnDangerSm, onClick: () => deleteRepair(r) }, "Delete")))))),
+            !loadingData && tab === "Rent History" && (rentHistory.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No rent changes recorded yet.") : rentHistory.map(r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
+                React.createElement("div", null,
+                    React.createElement("div", { style: { fontWeight: 700 } }, propName(r.property_id)),
+                    React.createElement("div", { style: { color: C.muted } },
+                        "$",
+                        r.old_rent,
+                        " \u2192 $",
+                        r.new_rent,
+                        " ",
+                        r.effective_date ? `(${r.effective_date})` : "",
+                        " \u2014 ",
+                        r.reason)),
+                React.createElement("button", { style: btnDangerSm, onClick: () => deleteRentRecord(r) }, "Delete"))))),
+            !loadingData && tab === "Damage Log" && (damages.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No damage reports yet.") : damages.map(d => (React.createElement("div", { key: d.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
+                    React.createElement("div", { style: { fontWeight: 700 } }, d.description),
+                    React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                        React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditDamage(d) }, "Edit"),
+                        React.createElement("button", { style: btnDangerSm, onClick: () => deleteDamage(d) }, "Delete"))),
+                React.createElement("div", { style: { color: C.muted, marginBottom: 8 } },
+                    propName(d.property_id),
+                    " \u2014 ",
+                    d.severity,
+                    " \u2014 Est. $",
+                    d.estimated_cost),
+                d.photo_url && React.createElement("img", { src: d.photo_url, style: { maxWidth: 150, borderRadius: 6, marginBottom: 8, display: "block" } }),
+                React.createElement("select", { value: d.status, onChange: e => updateDamageStatus(d.id, e.target.value), style: { ...inp, width: "auto", marginBottom: 0 } },
+                    React.createElement("option", null, "Pending"),
+                    React.createElement("option", null, "Deducted from deposit"),
+                    React.createElement("option", null, "Tenant paid"),
+                    React.createElement("option", null, "Disputed")))))),
+            !loadingData && tab === "Contractors" && (TRADES.map(trade => {
+                const list = contractorsForTrade(trade);
+                if (list.length === 0)
+                    return null;
+                return (React.createElement("div", { key: trade, style: { marginBottom: 16 } },
+                    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8 } }, trade),
+                    list.map(c => (React.createElement("div", { key: c.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
+                        React.createElement("div", null,
+                            React.createElement("div", { style: { fontWeight: 700 } }, c.name),
+                            React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                                c.phone,
+                                " ",
+                                c.email ? `— ${c.email}` : ""),
+                            c.notes && React.createElement("div", { style: { color: C.muted, fontSize: 12, marginTop: 4 } }, c.notes)),
+                        React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                            React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditContractor(c) }, "Edit"),
+                            React.createElement("button", { style: btnDangerSm, onClick: () => deleteContractor(c) }, "Delete")))))));
+            })),
+            !loadingData && tab === "Contractors" && contractors.length === 0 && React.createElement("div", { style: { color: C.muted } }, "No contractors added yet."),
+            !loadingData && tab === "Notices" && (properties.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "Add a property first, then you can upload notices to it.") :
+                properties.map(p => {
+                    const list = notices.filter(n => n.property_id === p.id);
+                    return (React.createElement("div", { key: p.id, style: { marginBottom: 16 } },
+                        React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8 } }, p.address),
+                        list.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 8 } }, "No notices uploaded yet.") : list.map(n => (React.createElement("div", { key: n.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
+                            React.createElement("div", null,
+                                React.createElement("div", { style: { fontWeight: 700 } }, n.title),
+                                React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                                    n.notice_type,
+                                    n.created_at ? ` — ${new Date(n.created_at).toLocaleDateString()}` : "")),
+                            React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                                React.createElement("a", { href: n.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View"),
+                                React.createElement("button", { style: btnDangerSm, onClick: () => deleteNotice(n) }, "Delete")))))));
+                })),
+            !loadingData && tab === "Contracts" && (properties.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "Add a property first, then you can upload contracts to it.") :
+                properties.map(p => {
+                    const list = contracts.filter(ct => ct.property_id === p.id);
+                    return (React.createElement("div", { key: p.id, style: { marginBottom: 16 } },
+                        React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8 } }, p.address),
+                        list.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 8 } }, "No contracts uploaded yet.") : list.map(ct => (React.createElement("div", { key: ct.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
+                            React.createElement("div", null,
+                                React.createElement("div", { style: { fontWeight: 700 } }, ct.title),
+                                React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, ct.created_at ? new Date(ct.created_at).toLocaleDateString() : "")),
+                            React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                                React.createElement("a", { href: ct.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View"),
+                                React.createElement("button", { style: btnDangerSm, onClick: () => deleteContract(ct) }, "Delete")))))));
+                })),
+            !loadingData && tab === "Inspections" && !viewInspection && (inspections.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No inspections yet.") : inspections.map(insp => {
+                return (React.createElement("div", { key: insp.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
+                    React.createElement("div", { onClick: () => { setViewInspection(insp.id); setForm({}); }, style: { cursor: "pointer", flex: 1, minWidth: 180 } },
+                        React.createElement("div", { style: { fontWeight: 700 } },
+                            insp.inspection_type,
+                            " \u2014 ",
+                            propName(insp.property_id)),
+                        React.createElement("div", { style: { color: C.muted } },
+                            insp.inspection_date,
+                            " \u2014 ",
+                            (insp.sections || []).length,
+                            " section(s)")),
+                    React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                        React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: (e) => { e.stopPropagation(); setPrintInspection(insp); setTimeout(() => window.print(), 100); } }, "Print"),
+                        React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: (e) => { e.stopPropagation(); emailInspection(insp); } }, "Email"),
+                        React.createElement("button", { style: btnDangerSm, onClick: (e) => { e.stopPropagation(); deleteInspection(insp); } }, "Delete"))));
+            })),
+            !loadingData && tab === "Inspections" && viewInspection && (() => {
+                const insp = inspections.find(i => i.id === viewInspection);
+                if (!insp)
+                    return null;
+                return (React.createElement("div", null,
+                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 } },
+                        React.createElement("button", { style: btnS, onClick: () => { setViewInspection(null); setForm({}); } }, "\u2190 Back to Inspections"),
+                        React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                            React.createElement("button", { style: { ...btnS, padding: "9px 14px" }, onClick: () => { setPrintInspection(insp); setTimeout(() => window.print(), 100); } }, "Print"),
+                            React.createElement("button", { style: { ...btnS, padding: "9px 14px" }, onClick: () => emailInspection(insp) }, "Email"),
+                            React.createElement("button", { style: btnDangerSm, onClick: () => deleteInspection(insp) }, "Delete Entire Inspection"))),
+                    React.createElement("h2", { style: { color: C.navy } },
+                        insp.inspection_type,
+                        " \u2014 ",
+                        propName(insp.property_id)),
+                    React.createElement("div", { style: { color: C.muted, marginBottom: 16 } }, insp.inspection_date),
+                    (insp.sections || []).map((sec, i) => (React.createElement("div", { key: i, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
+                        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
+                            React.createElement("div", { style: { fontWeight: 700 } }, sec.name),
+                            React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                                React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditSection(insp, i) }, "Edit"),
+                                React.createElement("button", { style: btnDangerSm, onClick: () => deleteInspectionSection(insp, i) }, "Delete"))),
+                        sec.contractorId && React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 6 } }, contractorName(sec.contractorId)),
+                        sec.notes && React.createElement("div", { style: { fontSize: 13, color: C.muted, marginBottom: 6 } }, sec.notes),
+                        sec.photoUrl && React.createElement("img", { src: sec.photoUrl, style: { maxWidth: 200, borderRadius: 6 } })))),
+                    React.createElement("div", { style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px dashed " + C.border, marginTop: 16 } },
+                        React.createElement("h4", { style: { marginBottom: 10, color: C.navy } }, "Add Section"),
+                        React.createElement("input", { style: inp, placeholder: "Section name (e.g. Roofing, Plumbing)", value: form.sectionName || "", onChange: e => setF("sectionName", e.target.value) }),
+                        React.createElement("select", { style: inp, value: form.sectionContractor || "", onChange: e => setF("sectionContractor", e.target.value) },
+                            React.createElement("option", { value: "" }, "Assign Contractor (optional)"),
+                            contractors.map(c => React.createElement("option", { key: c.id, value: c.id },
+                                c.name,
+                                " \u2014 ",
+                                c.trade))),
+                        React.createElement("input", { style: inp, placeholder: "Notes", value: form.sectionNotes || "", onChange: e => setF("sectionNotes", e.target.value) }),
+                        React.createElement(PhotoPicker, { idPrefix: "section-" + insp.id, label: "Photo", file: form.sectionPhoto, resetKey: resetKey, onSelect: e => handlePhotoSelect(e, "sectionPhoto") }),
+                        React.createElement("button", { style: btnP, onClick: () => addInspectionSection(insp.id) }, "Add Section"))));
+            })()),
+        printRepair && (React.createElement("div", { style: { position: "fixed", inset: 0, background: "#fff", zIndex: 200, padding: 30 } },
+            React.createElement("button", { className: "no-print", style: { ...btnS, marginBottom: 16 }, onClick: () => setPrintRepair(null) }, "Close"),
+            React.createElement("h2", null, "Repair Request"),
+            React.createElement("p", null,
+                React.createElement("strong", null, "Property:"),
+                " ",
+                propName(printRepair.property_id)),
+            React.createElement("p", null,
+                React.createElement("strong", null, "Issue:"),
+                " ",
+                printRepair.title),
+            React.createElement("p", null,
+                React.createElement("strong", null, "Trade:"),
+                " ",
+                printRepair.trade || "General"),
+            React.createElement("p", null,
+                React.createElement("strong", null, "Priority:"),
+                " ",
+                printRepair.priority),
+            React.createElement("p", null,
+                React.createElement("strong", null, "Notes:"),
+                " ",
+                printRepair.notes || "None"),
+            printRepair.photo_url && React.createElement("img", { src: printRepair.photo_url, style: { maxWidth: 300, marginTop: 10 } }))),
+        printInspection && (() => {
+            const prop = properties.find(p => p.id === printInspection.property_id);
+            const fullAddress = prop ? prop.address : propName(printInspection.property_id);
+            return (React.createElement("div", { style: { position: "fixed", inset: 0, background: "#fff", zIndex: 200, padding: 30, overflowY: "auto" } },
+                React.createElement("button", { className: "no-print", style: { ...btnS, marginBottom: 16 }, onClick: () => setPrintInspection(null) }, "Close"),
+                React.createElement("div", { style: { textAlign: "center", borderBottom: "2px solid " + C.navy, paddingBottom: 16, marginBottom: 20 } },
+                    React.createElement("h1", { style: { fontSize: 20, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 6 } },
+                        printInspection.inspection_type,
+                        " Inspection Report"),
+                    React.createElement("div", { style: { fontSize: 15, color: C.muted } }, fullAddress)),
+                React.createElement("p", { style: { marginBottom: 16, color: C.muted } },
+                    "Inspection Date: ",
+                    printInspection.inspection_date),
+                (printInspection.sections || []).length === 0 && React.createElement("p", null, "No sections recorded."),
+                (printInspection.sections || []).map((sec, i) => (React.createElement("div", { key: i, style: { marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid #ddd" } },
+                    React.createElement("p", null,
+                        React.createElement("strong", null, sec.name),
+                        sec.contractorId ? ` — ${contractorName(sec.contractorId)}` : ""),
+                    sec.notes && React.createElement("p", null,
+                        "Notes: ",
+                        sec.notes),
+                    sec.photoUrl && React.createElement("img", { src: sec.photoUrl, style: { maxWidth: 250, marginTop: 6 } }))))));
+        })(),
+        printProperty && (() => {
+            const p = properties.find(pr => pr.id === printProperty);
+            if (!p)
+                return null;
+            const pRepairs = repairs.filter(r => r.property_id === p.id);
+            const pDamages = damages.filter(d => d.property_id === p.id);
+            const pRent = rentHistory.filter(r => r.property_id === p.id);
+            const pInspections = inspections.filter(i => i.property_id === p.id);
+            const pNotices = notices.filter(n => n.property_id === p.id);
+            const pContracts = contracts.filter(ct => ct.property_id === p.id);
+            return (React.createElement("div", { style: { position: "fixed", inset: 0, background: "#fff", zIndex: 200, padding: 30, overflowY: "auto" } },
+                React.createElement("button", { className: "no-print", style: { ...btnS, marginBottom: 16 }, onClick: () => setPrintProperty(null) }, "Close"),
+                React.createElement("div", { style: { textAlign: "center", borderBottom: "2px solid " + C.navy, paddingBottom: 16, marginBottom: 20 } },
+                    React.createElement("h1", { style: { fontSize: 20, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 6 } }, p.address),
+                    React.createElement("div", { style: { fontSize: 14, color: C.muted } },
+                        "Tenant: ",
+                        p.tenant,
+                        " \u2014 $",
+                        p.rent,
+                        "/mo ",
+                        p.lease_end ? `— Lease ends ${p.lease_end}` : "")),
+                React.createElement("h3", { style: { marginBottom: 8 } },
+                    "Repairs (",
+                    pRepairs.length,
+                    ")"),
+                pRepairs.length === 0 ? React.createElement("p", { style: { color: C.muted, marginBottom: 16 } }, "None recorded.") : pRepairs.map(r => (React.createElement("div", { key: r.id, style: { marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid #eee" } },
+                    React.createElement("p", null,
+                        React.createElement("strong", null, r.title),
+                        " \u2014 ",
+                        r.trade || "General",
+                        " \u2014 ",
+                        r.priority,
+                        " \u2014 ",
+                        r.status,
+                        " \u2014 $",
+                        r.cost)))),
+                React.createElement("h3", { style: { marginBottom: 8, marginTop: 16 } },
+                    "Damage Log (",
+                    pDamages.length,
+                    ")"),
+                pDamages.length === 0 ? React.createElement("p", { style: { color: C.muted, marginBottom: 16 } }, "None recorded.") : pDamages.map(d => (React.createElement("div", { key: d.id, style: { marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid #eee" } },
+                    React.createElement("p", null,
+                        React.createElement("strong", null, d.description),
+                        " \u2014 ",
+                        d.severity,
+                        " \u2014 Est. $",
+                        d.estimated_cost,
+                        " \u2014 ",
+                        d.status)))),
+                React.createElement("h3", { style: { marginBottom: 8, marginTop: 16 } },
+                    "Rent History (",
+                    pRent.length,
+                    ")"),
+                pRent.length === 0 ? React.createElement("p", { style: { color: C.muted, marginBottom: 16 } }, "None recorded.") : pRent.map(r => (React.createElement("div", { key: r.id, style: { marginBottom: 8 } },
+                    React.createElement("p", null,
+                        "$",
+                        r.old_rent,
+                        " \u2192 $",
+                        r.new_rent,
+                        " ",
+                        r.effective_date ? `(${r.effective_date})` : "",
+                        " \u2014 ",
+                        r.reason)))),
+                React.createElement("h3", { style: { marginBottom: 8, marginTop: 16 } },
+                    "Inspections (",
+                    pInspections.length,
+                    ")"),
+                pInspections.length === 0 ? React.createElement("p", { style: { color: C.muted, marginBottom: 16 } }, "None recorded.") : pInspections.map(i => (React.createElement("div", { key: i.id, style: { marginBottom: 8 } },
+                    React.createElement("p", null,
+                        React.createElement("strong", null, i.inspection_type),
+                        " \u2014 ",
+                        i.inspection_date,
+                        " \u2014 ",
+                        (i.sections || []).length,
+                        " section(s)")))),
+                React.createElement("h3", { style: { marginBottom: 8, marginTop: 16 } },
+                    "Notices (",
+                    pNotices.length,
+                    ")"),
+                pNotices.length === 0 ? React.createElement("p", { style: { color: C.muted, marginBottom: 16 } }, "None uploaded.") : pNotices.map(n => (React.createElement("div", { key: n.id, style: { marginBottom: 8 } },
+                    React.createElement("p", null,
+                        n.title,
+                        " \u2014 ",
+                        n.notice_type)))),
+                React.createElement("h3", { style: { marginBottom: 8, marginTop: 16 } },
+                    "Contracts (",
+                    pContracts.length,
+                    ")"),
+                pContracts.length === 0 ? React.createElement("p", { style: { color: C.muted, marginBottom: 16 } }, "None uploaded.") : pContracts.map(ct => (React.createElement("div", { key: ct.id, style: { marginBottom: 8 } },
+                    React.createElement("p", null, ct.title))))));
+        })(),
+        modal === "property" && (React.createElement(Modal, { title: "Add Property", onClose: closeModal },
+            React.createElement("input", { style: inp, placeholder: "Address", value: form.address || "", onChange: e => setF("address", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Tenant Name", value: form.tenant || "", onChange: e => setF("tenant", e.target.value) }),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Monthly Rent", value: form.rent || "", onChange: e => setF("rent", e.target.value) }),
+            React.createElement("input", { style: inp, type: "date", value: form.leaseEnd || "", onChange: e => setF("leaseEnd", e.target.value) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: addProperty }, "Add"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "editProperty" && (React.createElement(Modal, { title: "Edit Property", onClose: closeModal },
+            React.createElement("input", { style: inp, placeholder: "Address", value: form.address || "", onChange: e => setF("address", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Tenant Name", value: form.tenant || "", onChange: e => setF("tenant", e.target.value) }),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Monthly Rent", value: form.rent || "", onChange: e => setF("rent", e.target.value) }),
+            React.createElement("input", { style: inp, type: "date", value: form.leaseEnd || "", onChange: e => setF("leaseEnd", e.target.value) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: updateProperty }, "Save Changes"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "repair" && (React.createElement(Modal, { title: "Log Repair", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select property\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("input", { style: inp, placeholder: "Description", value: form.title || "", onChange: e => setF("title", e.target.value) }),
+            React.createElement("select", { style: inp, value: form.trade || "", onChange: e => setF("trade", e.target.value) },
+                React.createElement("option", { value: "" }, "Select Trade\u2026"),
+                TRADES.map(t => React.createElement("option", { key: t, value: t }, t))),
+            React.createElement("select", { style: inp, value: form.repairContractorId || "", onChange: e => setF("repairContractorId", e.target.value) },
+                React.createElement("option", { value: "" }, "Assign Contractor (optional)"),
+                contractors.map(c => React.createElement("option", { key: c.id, value: c.id },
+                    c.name,
+                    " \u2014 ",
+                    c.trade))),
+            React.createElement("select", { style: inp, value: form.priority || "Medium", onChange: e => setF("priority", e.target.value) },
+                React.createElement("option", null, "Medium"),
+                React.createElement("option", null, "High"),
+                React.createElement("option", null, "Low")),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Cost", value: form.cost || "", onChange: e => setF("cost", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Notes", value: form.notes || "", onChange: e => setF("notes", e.target.value) }),
+            React.createElement(PhotoPicker, { idPrefix: "repair-photo", label: "Photo", file: form.photoFile, resetKey: resetKey, onSelect: e => handlePhotoSelect(e, "photoFile") }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: addRepair }, "Log Repair"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "editRepair" && (React.createElement(Modal, { title: "Edit Repair", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select property\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("input", { style: inp, placeholder: "Description", value: form.title || "", onChange: e => setF("title", e.target.value) }),
+            React.createElement("select", { style: inp, value: form.trade || "", onChange: e => setF("trade", e.target.value) },
+                React.createElement("option", { value: "" }, "Select Trade\u2026"),
+                TRADES.map(t => React.createElement("option", { key: t, value: t }, t))),
+            React.createElement("select", { style: inp, value: form.repairContractorId || "", onChange: e => setF("repairContractorId", e.target.value) },
+                React.createElement("option", { value: "" }, "Assign Contractor (optional)"),
+                contractors.map(c => React.createElement("option", { key: c.id, value: c.id },
+                    c.name,
+                    " \u2014 ",
+                    c.trade))),
+            React.createElement("select", { style: inp, value: form.priority || "Medium", onChange: e => setF("priority", e.target.value) },
+                React.createElement("option", null, "Medium"),
+                React.createElement("option", null, "High"),
+                React.createElement("option", null, "Low")),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Cost", value: form.cost || "", onChange: e => setF("cost", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Notes", value: form.notes || "", onChange: e => setF("notes", e.target.value) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: updateRepair }, "Save Changes"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "rent" && (React.createElement(Modal, { title: "Rent Increase", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select property\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("input", { style: inp, type: "number", placeholder: "New Rent", value: form.newRent || "", onChange: e => setF("newRent", e.target.value) }),
+            React.createElement("input", { style: inp, type: "date", value: form.effectiveDate || "", onChange: e => setF("effectiveDate", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Reason", value: form.reason || "", onChange: e => setF("reason", e.target.value) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: addRentIncrease }, "Save"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "damage" && (React.createElement(Modal, { title: "Log Damage", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select property\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("input", { style: inp, placeholder: "Description", value: form.description || "", onChange: e => setF("description", e.target.value) }),
+            React.createElement("select", { style: inp, value: form.severity || "Minor", onChange: e => setF("severity", e.target.value) },
+                React.createElement("option", null, "Minor"),
+                React.createElement("option", null, "Moderate"),
+                React.createElement("option", null, "Severe")),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Estimated Cost", value: form.estimatedCost || "", onChange: e => setF("estimatedCost", e.target.value) }),
+            React.createElement(PhotoPicker, { idPrefix: "damage-photo", label: "Photo", file: form.damagePhotoFile, resetKey: resetKey, onSelect: e => handlePhotoSelect(e, "damagePhotoFile") }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: addDamage }, "Log Damage"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "editDamage" && (React.createElement(Modal, { title: "Edit Damage", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select property\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("input", { style: inp, placeholder: "Description", value: form.description || "", onChange: e => setF("description", e.target.value) }),
+            React.createElement("select", { style: inp, value: form.severity || "Minor", onChange: e => setF("severity", e.target.value) },
+                React.createElement("option", null, "Minor"),
+                React.createElement("option", null, "Moderate"),
+                React.createElement("option", null, "Severe")),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Estimated Cost", value: form.estimatedCost || "", onChange: e => setF("estimatedCost", e.target.value) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: updateDamage }, "Save Changes"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "contractor" && (React.createElement(Modal, { title: "Add Contractor", onClose: closeModal },
+            React.createElement("input", { style: inp, placeholder: "Name", value: form.name || "", on<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PropTrack - Property Manager</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #f7f8fc; }
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+"use strict";
+const { useState, useEffect } = React;
+const C = { navy: "#1a2744", accent: "#e8a838", red: "#dc3545", green: "#2e7d32", blue: "#1565c0", orange: "#d84315", bg: "#f7f8fc", white: "#fff", border: "#e2e6ef", text: "#1a2744", muted: "#6b7a99" };
+const SUPABASE_URL = "https://gistxdxxaehbekgivcks.supabase.co";
+const SUPABASE_KEY = "sb_publishable_S4PvtoVtTRQSxrMhpb5U5Q_4oUpqIcK";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const TRADES = ["Plumbing", "Electrical", "HVAC", "Roofing", "General", "Landscaping", "Painting", "Flooring", "Appliance", "Other"];
+const inp = { width: "100%", padding: "8px", border: "1px solid #e2e6ef", borderRadius: 6, fontSize: 14, background: "#f7f8fc", boxSizing: "border-box", marginBottom: 10 };
+const btnP = { background: C.navy, color: "#fff", border: "none", borderRadius: 6, padding: "9px 18px", fontWeight: 600 };
+const btnS = { background: "transparent", color: C.navy, border: "1px solid " + C.border, borderRadius: 6, padding: "9px 18px", fontWeight: 600 };
+const btnDanger = { background: "transparent", color: C.red, border: "1px solid " + C.red, borderRadius: 6, padding: "9px 18px", fontWeight: 600 };
+const btnDangerSm = { background: "transparent", color: C.red, border: "1px solid " + C.red, borderRadius: 6, padding: "5px 10px", fontWeight: 600, fontSize: 12, cursor: "pointer" };
+// Extracts the storage object path from a Supabase public URL for a given bucket
+function extractStoragePath(url, bucket) {
+    if (!url)
+        return null;
+    const marker = `/${bucket}/`;
+    const idx = url.indexOf(marker);
+    if (idx === -1)
+        return null;
+    return url.slice(idx + marker.length);
+}
+// Fetches an image URL and converts it to a base64 data URL for PDF embedding
+async function loadImageAsDataURL(url) {
+    try {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        return await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    }
+    catch (e) {
+        return null;
+    }
+}
+// Gets natural pixel dimensions of a loaded image so it can be scaled proportionally in the PDF
+function getImageSize(dataUrl) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ width: img.width, height: img.height });
+        img.onerror = () => resolve({ width: 0, height: 0 });
+        img.src = dataUrl;
+    });
+}
+// Builds a letterhead-styled PDF report for an inspection (title, address, sections, embedded photos)
+async function buildInspectionReportPdf(insp, propertyAddress, contractorNameFn) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: "pt", format: "letter" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginX = 40;
+    const maxWidth = pageWidth - marginX * 2;
+    let y = 50;
+    const ensureSpace = (needed) => {
+        if (y + needed > pageHeight - 40) {
+            doc.addPage();
+            y = 50;
+        }
+    };
+    doc.setFont(undefined, "bold");
+    doc.setFontSize(18);
+    doc.text(`${insp.inspection_type} Inspection Report`, marginX, y);
+    y += 10;
+    doc.setDrawColor(26, 39, 68);
+    doc.line(marginX, y, pageWidth - marginX, y);
+    y += 24;
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(13);
+    doc.text(propertyAddress, marginX, y);
+    y += 20;
+    doc.setFontSize(10);
+    doc.setTextColor(107, 122, 153);
+    doc.text(`Inspection Date: ${insp.inspection_date}`, marginX, y);
+    doc.setTextColor(26, 39, 68);
+    y += 26;
+    const sections = insp.sections || [];
+    if (sections.length === 0) {
+        doc.setFontSize(11);
+        doc.text("No sections recorded.", marginX, y);
+    }
+    for (const sec of sections) {
+        ensureSpace(50);
+        doc.setFontSize(13);
+        doc.setFont(undefined, "bold");
+        doc.text(sec.name, marginX, y);
+        y += 18;
+        doc.setFont(undefined, "normal");
+        if (sec.contractorId) {
+            doc.setFontSize(10);
+            doc.setTextColor(107, 122, 153);
+            doc.text(`Contractor: ${contractorNameFn(sec.contractorId)}`, marginX, y);
+            doc.setTextColor(26, 39, 68);
+            y += 14;
+        }
+        if (sec.notes) {
+            doc.setFontSize(10);
+            const lines = doc.splitTextToSize(sec.notes, maxWidth);
+            ensureSpace(lines.length * 12);
+            doc.text(lines, marginX, y);
+            y += lines.length * 12 + 4;
+        }
+        if (sec.photoUrl) {
+            const dataUrl = await loadImageAsDataURL(sec.photoUrl);
+            if (dataUrl) {
+                const dims = await getImageSize(dataUrl);
+                const displayWidth = Math.min(240, maxWidth);
+                const displayHeight = dims.width ? displayWidth * (dims.height / dims.width) : 160;
+                ensureSpace(displayHeight + 10);
+                try {
+                    doc.addImage(dataUrl, "JPEG", marginX, y, displayWidth, displayHeight);
+                }
+                catch (e) { }
+                y += displayHeight + 16;
+            }
+        }
+        y += 8;
+    }
+    return doc.output("blob");
+}
+async function buildPropertyReportPdf(p, pRepairs, pDamages, pRent, pInspections, pNotices, pContracts, contractorNameFn) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: "pt", format: "letter" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginX = 40;
+    const maxWidth = pageWidth - marginX * 2;
+    let y = 50;
+    const ensureSpace = (needed) => {
+        if (y + needed > pageHeight - 40) {
+            doc.addPage();
+            y = 50;
+        }
+    };
+    const sectionHeader = (text) => {
+        ensureSpace(30);
+        doc.setFontSize(14);
+        doc.setFont(undefined, "bold");
+        doc.setTextColor(26, 39, 68);
+        doc.text(text, marginX, y);
+        y += 8;
+        doc.setDrawColor(200, 200, 200);
+        doc.line(marginX, y, pageWidth - marginX, y);
+        y += 18;
+        doc.setFont(undefined, "normal");
+    };
+    const addPhoto = async (url) => {
+        const dataUrl = await loadImageAsDataURL(url);
+        if (!dataUrl)
+            return;
+        const dims = await getImageSize(dataUrl);
+        const displayWidth = Math.min(200, maxWidth);
+        const displayHeight = dims.width ? displayWidth * (dims.height / dims.width) : 140;
+        ensureSpace(displayHeight + 10);
+        try {
+            doc.addImage(dataUrl, "JPEG", marginX, y, displayWidth, displayHeight);
+        }
+        catch (e) { }
+        y += displayHeight + 12;
+    };
+    doc.setFont(undefined, "bold");
+    doc.setFontSize(18);
+    doc.text(p.address, marginX, y);
+    y += 10;
+    doc.setDrawColor(26, 39, 68);
+    doc.line(marginX, y, pageWidth - marginX, y);
+    y += 24;
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(107, 122, 153);
+    doc.text(`Tenant: ${p.tenant}  —  $${p.rent}/mo${p.lease_end ? `  —  Lease ends ${p.lease_end}` : ""}`, marginX, y);
+    doc.setTextColor(26, 39, 68);
+    y += 30;
+    sectionHeader(`Repairs (${pRepairs.length})`);
+    if (pRepairs.length === 0) {
+        doc.setFontSize(10);
+        doc.text("None recorded.", marginX, y);
+        y += 20;
+    }
+    for (const r of pRepairs) {
+        ensureSpace(40);
+        doc.setFontSize(11);
+        doc.setFont(undefined, "bold");
+        doc.text(r.title, marginX, y);
+        y += 14;
+        doc.setFont(undefined, "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(107, 122, 153);
+        doc.text(`${r.trade || "General"} — ${r.priority} priority — ${r.status} — $${r.cost}`, marginX, y);
+        doc.setTextColor(26, 39, 68);
+        y += 18;
+        if (r.photo_url) {
+            await addPhoto(r.photo_url);
+        }
+    }
+    y += 10;
+    sectionHeader(`Damage Log (${pDamages.length})`);
+    if (pDamages.length === 0) {
+        doc.setFontSize(10);
+        doc.text("None recorded.", marginX, y);
+        y += 20;
+    }
+    for (const d of pDamages) {
+        ensureSpace(40);
+        doc.setFontSize(11);
+        doc.setFont(undefined, "bold");
+        doc.text(d.description, marginX, y);
+        y += 14;
+        doc.setFont(undefined, "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(107, 122, 153);
+        doc.text(`${d.severity} — Est. $${d.estimated_cost} — ${d.status}`, marginX, y);
+        doc.setTextColor(26, 39, 68);
+        y += 18;
+        if (d.photo_url) {
+            await addPhoto(d.photo_url);
+        }
+    }
+    y += 10;
+    sectionHeader(`Rent History (${pRent.length})`);
+    if (pRent.length === 0) {
+        doc.setFontSize(10);
+        doc.text("None recorded.", marginX, y);
+        y += 20;
+    }
+    for (const r of pRent) {
+        ensureSpace(20);
+        doc.setFontSize(10);
+        doc.text(`$${r.old_rent} → $${r.new_rent} ${r.effective_date ? `(${r.effective_date})` : ""} — ${r.reason}`, marginX, y);
+        y += 16;
+    }
+    y += 10;
+    sectionHeader(`Inspections (${pInspections.length})`);
+    if (pInspections.length === 0) {
+        doc.setFontSize(10);
+        doc.text("None recorded.", marginX, y);
+        y += 20;
+    }
+    for (const i of pInspections) {
+        ensureSpace(30);
+        doc.setFontSize(11);
+        doc.setFont(undefined, "bold");
+        doc.text(i.inspection_type, marginX, y);
+        y += 14;
+        doc.setFont(undefined, "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(107, 122, 153);
+        doc.text(`${i.inspection_date} — ${(i.sections || []).length} section(s)`, marginX, y);
+        doc.setTextColor(26, 39, 68);
+        y += 18;
+    }
+    y += 10;
+    sectionHeader(`Notices (${pNotices.length})`);
+    if (pNotices.length === 0) {
+        doc.setFontSize(10);
+        doc.text("None uploaded.", marginX, y);
+        y += 20;
+    }
+    for (const n of pNotices) {
+        ensureSpace(20);
+        doc.setFontSize(10);
+        doc.text(`${n.title} — ${n.notice_type}`, marginX, y);
+        y += 16;
+    }
+    y += 10;
+    sectionHeader(`Contracts (${pContracts.length})`);
+    if (pContracts.length === 0) {
+        doc.setFontSize(10);
+        doc.text("None uploaded.", marginX, y);
+        y += 20;
+    }
+    for (const ct of pContracts) {
+        ensureSpace(20);
+        doc.setFontSize(10);
+        doc.text(ct.title, marginX, y);
+        y += 16;
+    }
+    return doc.output("blob");
               }
 // Opens the device's mail app via a temporary anchor click, which is more reliable
 // on mobile browsers than setting window.location.href directly (which can silently fail).
