@@ -301,6 +301,45 @@ async function buildPropertyReportPdf(p, pRepairs, pDamages, pRent, pInspections
     }
     return doc.output("blob");
 }
+// Builds a simple rent receipt PDF for a given property and month, listing each payment received
+async function buildRentReceiptPdf(property, monthLabelText, paymentsList, totalPaid, rentDue) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: "pt", format: "letter" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const marginX = 40;
+    let y = 60;
+    doc.setFont(undefined, "bold");
+    doc.setFontSize(20);
+    doc.text("Rent Receipt", marginX, y);
+    y += 10;
+    doc.setDrawColor(26, 39, 68);
+    doc.line(marginX, y, pageWidth - marginX, y);
+    y += 30;
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(12);
+    doc.text(`Property: ${property.address}`, marginX, y);
+    y += 20;
+    doc.text(`Tenant: ${property.tenant}`, marginX, y);
+    y += 20;
+    doc.text(`For Month: ${monthLabelText}`, marginX, y);
+    y += 20;
+    doc.text(`Monthly Rent: $${rentDue}`, marginX, y);
+    y += 30;
+    doc.setFont(undefined, "bold");
+    doc.text("Payments Received:", marginX, y);
+    y += 18;
+    doc.setFont(undefined, "normal");
+    for (const p of paymentsList) {
+        doc.text(`${p.payment_date} — $${p.amount}${p.notes ? " (" + p.notes + ")" : ""}`, marginX, y);
+        y += 16;
+    }
+    y += 10;
+    doc.setFont(undefined, "bold");
+    doc.text(`Total Paid: $${totalPaid}`, marginX, y);
+    y += 18;
+    doc.text(totalPaid >= rentDue ? "Status: PAID IN FULL" : `Status: PARTIAL — $${(rentDue - totalPaid).toFixed(2)} remaining`, marginX, y);
+    return doc.output("blob");
+}
 // Opens the device's mail app via a temporary anchor click, which is more reliable
 // on mobile browsers than setting window.location.href directly (which can silently fail).
 function openMailto(mailtoUrl) {
@@ -414,6 +453,7 @@ function App() {
     const [inspections, setInspections] = useState([]);
     const [notices, setNotices] = useState([]);
     const [contracts, setContracts] = useState([]);
+    const [payments, setPayments] = useState([]);
     const [modal, setModal] = useState(() => { try {
         return sessionStorage.getItem("pt_modal") || null;
     }
@@ -506,7 +546,7 @@ function App() {
     }, [session]);
     const loadAllData = async () => {
         setLoadingData(true);
-        const [p, r, rh, d, c, ins, nt, ct] = await Promise.all([
+        const [p, r, rh, d, c, ins, nt, ct, pm] = await Promise.all([
             sb.from("properties").select("*").order("id"),
             sb.from("repairs").select("*").order("id"),
             sb.from("rent_history").select("*").order("id"),
@@ -515,6 +555,7 @@ function App() {
             sb.from("inspections").select("*").order("id"),
             sb.from("notices").select("*").order("id"),
             sb.from("contracts").select("*").order("id"),
+            sb.from("payments").select("*").order("id"),
         ]);
         if (p.data)
             setProperties(p.data);
@@ -532,6 +573,8 @@ function App() {
             setNotices(nt.data);
         if (ct.data)
             setContracts(ct.data);
+        if (pm.data)
+            setPayments(pm.data);
         setLoadingData(false);
     };
     const [resetKey, setResetKey] = useState(0);
@@ -562,23 +605,23 @@ function App() {
     const addProperty = async () => {
         if (!form.address || !form.tenant)
             return;
-        const { data, error } = await sb.from("properties").insert({ user_id: userId(), address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null }).select();
+        const { data, error } = await sb.from("properties").insert({ user_id: userId(), address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null, tenant_email: form.tenantEmail || null, tenant_phone: form.tenantPhone || null }).select();
         showErr(error);
         if (data)
             setProperties(p => [...p, ...data]);
         closeModal();
     };
     const openEditProperty = (p) => {
-        setForm({ propId: p.id, address: p.address, tenant: p.tenant, rent: p.rent, leaseEnd: p.lease_end || "" });
+        setForm({ propId: p.id, address: p.address, tenant: p.tenant, rent: p.rent, leaseEnd: p.lease_end || "", tenantEmail: p.tenant_email || "", tenantPhone: p.tenant_phone || "" });
         setModal("editProperty");
     };
     const updateProperty = async () => {
         if (!form.propId || !form.address || !form.tenant)
             return;
-        const { error } = await sb.from("properties").update({ address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null }).eq("id", form.propId);
+        const { error } = await sb.from("properties").update({ address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null, tenant_email: form.tenantEmail || null, tenant_phone: form.tenantPhone || null }).eq("id", form.propId);
         showErr(error);
         if (!error) {
-            setProperties(ps => ps.map(p => p.id === form.propId ? { ...p, address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null } : p));
+            setProperties(ps => ps.map(p => p.id === form.propId ? { ...p, address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null, tenant_email: form.tenantEmail || null, tenant_phone: form.tenantPhone || null } : p));
             closeModal();
         }
     };
@@ -972,13 +1015,86 @@ function App() {
             alert("Couldn't generate the property report PDF (" + (e.message || e) + "). Please check your connection and try again.");
         }
     };
+    const monthLabel = (ym) => {
+        if (!ym)
+            return "";
+        const [y, m] = ym.split("-");
+        const d = new Date(Number(y), Number(m) - 1, 1);
+        return d.toLocaleString("default", { month: "long", year: "numeric" });
+    };
+    const monthsForProperty = (propertyId) => [...new Set(payments.filter(pm => pm.property_id === propertyId && pm.type === "Rent Payment").map(pm => pm.rent_month))].sort().reverse();
+    const rentPaymentsForPropertyMonth = (propertyId, month) => payments.filter(pm => pm.property_id === propertyId && pm.type === "Rent Payment" && pm.rent_month === month);
+    const addPayment = async () => {
+        if (!form.propertyId || !form.paymentType)
+            return;
+        const payload = { user_id: userId(), property_id: Number(form.propertyId), type: form.paymentType, payment_date: form.paymentDate || new Date().toISOString().slice(0, 10), notes: form.notes || "" };
+        if (form.paymentType === "Rent Payment") {
+            if (!form.paymentMonth || !form.paymentAmount)
+                return;
+            payload.rent_month = form.paymentMonth;
+            payload.amount = Number(form.paymentAmount) || 0;
+        }
+        else if (form.paymentType === "Security Deposit") {
+            if (!form.paymentAmount)
+                return;
+            payload.amount = Number(form.paymentAmount) || 0;
+        }
+        else if (form.paymentType === "Security Deposit Return") {
+            const depositTotal = Number(form.depositTotal) || 0;
+            const deductions = Number(form.deductions) || 0;
+            payload.amount = depositTotal - deductions;
+            payload.deductions = deductions;
+            payload.deduction_notes = form.deductionNotes || "";
+        }
+        else {
+            return;
+        }
+        const { data, error } = await withRetry(() => sb.from("payments").insert(payload).select());
+        showErr(error);
+        if (data)
+            setPayments(p => [...p, ...data]);
+        closeModal();
+    };
+    const deletePayment = async (pmt) => {
+        if (!window.confirm("Delete this payment record?"))
+            return;
+        const { error } = await sb.from("payments").delete().eq("id", pmt.id);
+        showErr(error);
+        if (!error)
+            setPayments(ps => ps.filter(x => x.id !== pmt.id));
+    };
+    const emailReceipt = async (property, month, paymentsList, totalPaid) => {
+        const monthText = monthLabel(month);
+        const subject = encodeURIComponent(`Rent Receipt — ${monthText} — ${property.address}`);
+        try {
+            const pdfBlob = await buildRentReceiptPdf(property, monthText, paymentsList, totalPaid, property.rent);
+            const fileName = `${userId()}/reports/${Date.now()}_receipt_${property.id}_${month}.pdf`;
+            let upErr = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const result = await sb.storage.from("repair-photos").upload(fileName, pdfBlob, { contentType: "application/pdf", upsert: true });
+                upErr = result.error;
+                if (!upErr)
+                    break;
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            if (upErr)
+                throw upErr;
+            const { data: urlData } = sb.storage.from("repair-photos").getPublicUrl(fileName);
+            const reportUrl = urlData.publicUrl;
+            const body = encodeURIComponent(`Here is your rent receipt for ${monthText}:\n\n${reportUrl}\n\nTotal Paid: $${totalPaid} of $${property.rent}`);
+            openMailto(`mailto:${property.tenant_email || ""}?subject=${subject}&body=${body}`);
+        }
+        catch (e) {
+            alert("Couldn't generate the receipt PDF (" + (e.message || e) + "). Please check your connection and try again.");
+        }
+    };
     if (checkingSession) {
         return React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", color: C.muted } }, "Loading...");
     }
     if (!session) {
         return React.createElement(AuthScreen, null);
     }
-    const TABS = ["Dashboard", "Properties", "Repairs", "Rent History", "Damage Log", "Inspections", "Contractors", "Notices", "Contracts"];
+    const TABS = ["Dashboard", "Properties", "Repairs", "Rent History", "Damage Log", "Inspections", "Contractors", "Notices", "Contracts", "Payments"];
     return (React.createElement("div", { style: { display: "flex", minHeight: "100vh" } },
         React.createElement("div", { className: "no-print", style: { width: 200, background: C.navy, padding: 20, color: "#fff", flexShrink: 0, display: "flex", flexDirection: "column" } },
             React.createElement("h2", { style: { fontSize: 18, marginBottom: 20 } }, "PropTrack"),
@@ -996,7 +1112,8 @@ function App() {
                 tab === "Contractors" && React.createElement("button", { style: btnP, onClick: () => openModal("contractor") }, "+ Add Contractor"),
                 tab === "Inspections" && !viewInspection && React.createElement("button", { style: btnP, onClick: () => openModal("inspection") }, "+ New Inspection"),
                 tab === "Notices" && React.createElement("button", { style: btnP, onClick: () => openModal("notice") }, "+ Upload Notice"),
-                tab === "Contracts" && React.createElement("button", { style: btnP, onClick: () => openModal("contract") }, "+ Upload Contract")),
+                tab === "Contracts" && React.createElement("button", { style: btnP, onClick: () => openModal("contract") }, "+ Upload Contract"),
+                tab === "Payments" && React.createElement("button", { style: btnP, onClick: () => openModal("payment") }, "+ Log Payment")),
             loadingData && React.createElement("div", { style: { color: C.muted } }, "Loading your data..."),
             !loadingData && tab === "Dashboard" && (React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 14 } },
                 React.createElement("div", { style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border } },
@@ -1222,6 +1339,58 @@ function App() {
                                 React.createElement("a", { href: ct.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View"),
                                 React.createElement("button", { style: btnDangerSm, onClick: () => deleteContract(ct) }, "Delete")))))));
                 })),
+            !loadingData && tab === "Payments" && (properties.length === 0 ? (React.createElement("div", { style: { color: C.muted } }, "Add a property first, then you can log payments for it.")) : (properties.map(p => {
+    const deposits = payments.filter(pm => pm.property_id === p.id && pm.type === "Security Deposit");
+    const returns = payments.filter(pm => pm.property_id === p.id && pm.type === "Security Deposit Return");
+    const months = monthsForProperty(p.id);
+    return (React.createElement("div", { key: p.id, style: { marginBottom: 24 } },
+        React.createElement("h3", { style: { color: C.navy, fontSize: 16, marginBottom: 8 } }, p.address),
+        React.createElement("h4", { style: { color: C.navy, fontSize: 14, marginBottom: 6, marginTop: 10 } }, "Security Deposit"),
+        deposits.length === 0 && returns.length === 0 ? (React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 8 } }, "No deposit activity recorded.")) : (React.createElement(React.Fragment, null,
+            deposits.map(d => (React.createElement("div", { key: d.id, style: { background: "#fff", padding: 12, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
+                React.createElement("div", null,
+                    React.createElement("div", { style: { fontWeight: 700 } },
+                        "Deposit Collected: $",
+                        d.amount),
+                    React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                        d.payment_date,
+                        d.notes ? " — " + d.notes : "")),
+                React.createElement("button", { style: btnDangerSm, onClick: () => deletePayment(d) }, "Delete")))),
+            returns.map(r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 12, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
+                React.createElement("div", null,
+                    React.createElement("div", { style: { fontWeight: 700 } },
+                        "Deposit Returned: $",
+                        r.amount),
+                    React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                        r.payment_date,
+                        r.deductions ? " — Deductions: $" + r.deductions : "",
+                        r.deduction_notes ? " (" + r.deduction_notes + ")" : "")),
+                React.createElement("button", { style: btnDangerSm, onClick: () => deletePayment(r) }, "Delete")))))),
+        React.createElement("h4", { style: { color: C.navy, fontSize: 14, marginBottom: 6, marginTop: 14 } }, "Rent Payments"),
+        months.length === 0 ? (React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, "No rent payments logged.")) : (months.map(m => {
+            const list = rentPaymentsForPropertyMonth(p.id, m);
+            const total = list.reduce((s, x) => s + Number(x.amount), 0);
+            const paidInFull = total >= Number(p.rent);
+            return (React.createElement("div", { key: m, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 } },
+                    React.createElement("div", { style: { fontWeight: 700 } }, monthLabel(m)),
+                    React.createElement("div", { style: { color: paidInFull ? C.green : C.orange, fontSize: 13, fontWeight: 600 } },
+                        paidInFull ? "\u2713 Paid in Full" : "Partial",
+                        " \u2014 $",
+                        total,
+                        " of $",
+                        p.rent)),
+                list.map(x => (React.createElement("div", { key: x.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, fontSize: 13, color: C.muted } },
+                    React.createElement("div", null,
+                        "$",
+                        x.amount,
+                        " on ",
+                        x.payment_date,
+                        x.notes ? " — " + x.notes : ""),
+                    React.createElement("button", { style: btnDangerSm, onClick: () => deletePayment(x) }, "Delete")))),
+                React.createElement("button", { style: { ...btnS, padding: "6px 12px", fontSize: 12, marginTop: 10 }, onClick: () => emailReceipt(p, m, list, total) }, "Email Receipt")));
+        }))));
+}))),
             !loadingData && tab === "Inspections" && !viewInspection && (inspections.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No inspections yet.") : inspections.map(insp => {
                 return (React.createElement("div", { key: insp.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
                     React.createElement("div", { onClick: () => { setViewInspection(insp.id); setForm({}); }, style: { cursor: "pointer", flex: 1, minWidth: 180 } },
@@ -1420,6 +1589,8 @@ function App() {
             React.createElement("input", { style: inp, placeholder: "Tenant Name", value: form.tenant || "", onChange: e => setF("tenant", e.target.value) }),
             React.createElement("input", { style: inp, type: "number", placeholder: "Monthly Rent", value: form.rent || "", onChange: e => setF("rent", e.target.value) }),
             React.createElement("input", { style: inp, type: "date", value: form.leaseEnd || "", onChange: e => setF("leaseEnd", e.target.value) }),
+            React.createElement("input", { style: inp, type: "email", placeholder: "Tenant Email", value: form.tenantEmail || "", onChange: e => setF("tenantEmail", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Tenant Phone", value: form.tenantPhone || "", onChange: e => setF("tenantPhone", e.target.value) }),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: addProperty }, "Add"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
@@ -1428,6 +1599,8 @@ function App() {
             React.createElement("input", { style: inp, placeholder: "Tenant Name", value: form.tenant || "", onChange: e => setF("tenant", e.target.value) }),
             React.createElement("input", { style: inp, type: "number", placeholder: "Monthly Rent", value: form.rent || "", onChange: e => setF("rent", e.target.value) }),
             React.createElement("input", { style: inp, type: "date", value: form.leaseEnd || "", onChange: e => setF("leaseEnd", e.target.value) }),
+            React.createElement("input", { style: inp, type: "email", placeholder: "Tenant Email", value: form.tenantEmail || "", onChange: e => setF("tenantEmail", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Tenant Phone", value: form.tenantPhone || "", onChange: e => setF("tenantPhone", e.target.value) }),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: updateProperty }, "Save Changes"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
@@ -1577,7 +1750,32 @@ function App() {
             React.createElement("input", { style: inp, type: "file", accept: "image/*,application/pdf", onChange: e => setF("contractFile", e.target.files[0]) }),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: addContract }, "Upload"),
-                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel"))))));
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "payment" && (React.createElement(Modal, { title: "Log Payment", onClose: closeModal },
+    React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
+        React.createElement("option", { value: "" }, "Select property\u2026"),
+        properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+    React.createElement("select", { style: inp, value: form.paymentType || "", onChange: e => setF("paymentType", e.target.value) },
+        React.createElement("option", { value: "" }, "Select Payment Type\u2026"),
+        React.createElement("option", null, "Rent Payment"),
+        React.createElement("option", null, "Security Deposit"),
+        React.createElement("option", null, "Security Deposit Return")),
+    form.paymentType === "Rent Payment" && (React.createElement(React.Fragment, null,
+        React.createElement("input", { style: inp, type: "month", value: form.paymentMonth || "", onChange: e => setF("paymentMonth", e.target.value) }),
+        React.createElement("input", { style: inp, type: "number", placeholder: "Amount Paid", value: form.paymentAmount || "", onChange: e => setF("paymentAmount", e.target.value) }))),
+    form.paymentType === "Security Deposit" && (React.createElement("input", { style: inp, type: "number", placeholder: "Amount Collected", value: form.paymentAmount || "", onChange: e => setF("paymentAmount", e.target.value) })),
+    form.paymentType === "Security Deposit Return" && (React.createElement(React.Fragment, null,
+        React.createElement("input", { style: inp, type: "number", placeholder: "Total Deposit Originally Collected", value: form.depositTotal || "", onChange: e => setF("depositTotal", e.target.value) }),
+        React.createElement("input", { style: inp, type: "number", placeholder: "Deductions for Damages/Expenses", value: form.deductions || "", onChange: e => setF("deductions", e.target.value) }),
+        React.createElement("input", { style: inp, placeholder: "Deduction Notes (optional)", value: form.deductionNotes || "", onChange: e => setF("deductionNotes", e.target.value) }),
+        React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 10 } },
+            "Amount to Return: $",
+            ((Number(form.depositTotal) || 0) - (Number(form.deductions) || 0)).toFixed(2)))),
+    React.createElement("input", { style: inp, type: "date", value: form.paymentDate || "", onChange: e => setF("paymentDate", e.target.value) }),
+    React.createElement("input", { style: inp, placeholder: "Notes", value: form.notes || "", onChange: e => setF("notes", e.target.value) }),
+    React.createElement("div", { style: { display: "flex", gap: 10 } },
+        React.createElement("button", { style: btnP, onClick: addPayment }, "Save"),
+        React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel"))))));
 }
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 </script>
