@@ -480,6 +480,10 @@ function App() {
     const [notices, setNotices] = useState([]);
     const [contracts, setContracts] = useState([]);
     const [payments, setPayments] = useState([]);
+    const [propertyTax, setPropertyTax] = useState([]);
+    const [forms, setForms] = useState([]);
+    const [resources, setResources] = useState([]);
+    const [resourceLinks, setResourceLinks] = useState([]);
     const [modal, setModal] = useState(() => { try {
         return sessionStorage.getItem("pt_modal") || null;
     }
@@ -587,7 +591,7 @@ function App() {
     }, [session]);
     const loadAllData = async () => {
         setLoadingData(true);
-        const [p, r, rh, d, c, ins, nt, ct, pm] = await Promise.all([
+        const [p, r, rh, d, c, ins, nt, ct, pm, pt, fm, res, rl] = await Promise.all([
             sb.from("properties").select("*").order("id"),
             sb.from("repairs").select("*").order("id"),
             sb.from("rent_history").select("*").order("id"),
@@ -597,6 +601,10 @@ function App() {
             sb.from("notices").select("*").order("id"),
             sb.from("contracts").select("*").order("id"),
             sb.from("payments").select("*").order("id"),
+            sb.from("property_tax").select("*").order("id"),
+            sb.from("forms").select("*").order("id"),
+            sb.from("resources").select("*").order("id"),
+            sb.from("resource_links").select("*").order("id"),
         ]);
         if (p.data)
             setProperties(p.data);
@@ -616,6 +624,14 @@ function App() {
             setContracts(ct.data);
         if (pm.data)
             setPayments(pm.data);
+        if (pt.data)
+            setPropertyTax(pt.data);
+        if (fm.data)
+            setForms(fm.data);
+        if (res.data)
+            setResources(res.data);
+        if (rl.data)
+            setResourceLinks(rl.data);
         setLoadingData(false);
     };
     const [resetKey, setResetKey] = useState(0);
@@ -856,6 +872,111 @@ function App() {
         if (data)
             setContracts(c => [...c, ...data]);
         closeModal();
+    };
+    const addPropertyTax = async () => {
+        if (!form.propertyId || !form.taxFile)
+            return;
+        const fileName = `${userId()}/${Date.now()}_${form.taxFile.name}`;
+        const { error: upErr } = await withRetry(() => sb.storage.from("notices").upload(fileName, form.taxFile, { contentType: form.taxFile.type || undefined }));
+        if (upErr) {
+            showErr(upErr);
+            return;
+        }
+        const { data: urlData } = sb.storage.from("notices").getPublicUrl(fileName);
+        const { data, error } = await withRetry(() => sb.from("property_tax").insert({ user_id: userId(), property_id: Number(form.propertyId), title: form.taxTitle || form.taxFile.name, tax_year: form.taxYear || null, file_url: urlData.publicUrl }).select());
+        showErr(error);
+        if (data)
+            setPropertyTax(t => [...t, ...data]);
+        closeModal();
+    };
+    const deletePropertyTax = async (t) => {
+        if (!window.confirm(`Delete property tax record "${t.title}"?`))
+            return;
+        const path = extractStoragePath(t.file_url, "notices");
+        if (path)
+            await sb.storage.from("notices").remove([path]);
+        const { error } = await sb.from("property_tax").delete().eq("id", t.id);
+        showErr(error);
+        if (!error)
+            setPropertyTax(ts => ts.filter(x => x.id !== t.id));
+    };
+    const addForm = async () => {
+        if (!form.formFile)
+            return;
+        const fileName = `${userId()}/${Date.now()}_${form.formFile.name}`;
+        const { error: upErr } = await withRetry(() => sb.storage.from("notices").upload(fileName, form.formFile, { contentType: form.formFile.type || undefined }));
+        if (upErr) {
+            showErr(upErr);
+            return;
+        }
+        const { data: urlData } = sb.storage.from("notices").getPublicUrl(fileName);
+        const { data, error } = await withRetry(() => sb.from("forms").insert({ user_id: userId(), title: form.formTitle || form.formFile.name, category: form.formCategory || "Other", file_url: urlData.publicUrl }).select());
+        showErr(error);
+        if (data)
+            setForms(f => [...f, ...data]);
+        closeModal();
+    };
+    const deleteForm = async (fm) => {
+        if (!window.confirm(`Delete form "${fm.title}"?`))
+            return;
+        const path = extractStoragePath(fm.file_url, "notices");
+        if (path)
+            await sb.storage.from("notices").remove([path]);
+        const { error } = await sb.from("forms").delete().eq("id", fm.id);
+        showErr(error);
+        if (!error)
+            setForms(fs => fs.filter(x => x.id !== fm.id));
+    };
+    const addResource = async () => {
+        if (!form.resourceName || !form.resourceCategory)
+            return;
+        const { data, error } = await sb.from("resources").insert({ user_id: userId(), name: form.resourceName, category: form.resourceCategory, phone: form.resourcePhone || "", email: form.resourceEmail || "", notes: form.resourceNotes || "" }).select();
+        showErr(error);
+        if (data)
+            setResources(r => [...r, ...data]);
+        closeModal();
+    };
+    const openEditResource = (r) => {
+        setForm({ resourceId: r.id, resourceName: r.name, resourceCategory: r.category, resourcePhone: r.phone || "", resourceEmail: r.email || "", resourceNotes: r.notes || "" });
+        setModal("editResource");
+    };
+    const updateResource = async () => {
+        if (!form.resourceId || !form.resourceName || !form.resourceCategory)
+            return;
+        const { error } = await sb.from("resources").update({ name: form.resourceName, category: form.resourceCategory, phone: form.resourcePhone || "", email: form.resourceEmail || "", notes: form.resourceNotes || "" }).eq("id", form.resourceId);
+        showErr(error);
+        if (!error) {
+            setResources(rs => rs.map(r => r.id === form.resourceId ? { ...r, name: form.resourceName, category: form.resourceCategory, phone: form.resourcePhone || "", email: form.resourceEmail || "", notes: form.resourceNotes || "" } : r));
+            closeModal();
+        }
+    };
+    const deleteResource = async (r) => {
+        if (!window.confirm(`Delete "${r.name}" from resources?`))
+            return;
+        const { error } = await sb.from("resources").delete().eq("id", r.id);
+        showErr(error);
+        if (!error)
+            setResources(rs => rs.filter(x => x.id !== r.id));
+    };
+    const addResourceLink = async () => {
+        if (!form.linkLabel || !form.linkUrl)
+            return;
+        let url = form.linkUrl.trim();
+        if (!/^https?:\/\//i.test(url))
+            url = "https://" + url;
+        const { data, error } = await sb.from("resource_links").insert({ user_id: userId(), label: form.linkLabel, url, notes: form.linkNotes || "" }).select();
+        showErr(error);
+        if (data)
+            setResourceLinks(l => [...l, ...data]);
+        closeModal();
+    };
+    const deleteResourceLink = async (l) => {
+        if (!window.confirm(`Delete link "${l.label}"?`))
+            return;
+        const { error } = await sb.from("resource_links").delete().eq("id", l.id);
+        showErr(error);
+        if (!error)
+            setResourceLinks(ls => ls.filter(x => x.id !== l.id));
     };
     const updateRepairStatus = async (id, status) => {
         const { error } = await sb.from("repairs").update({ status }).eq("id", id);
@@ -1182,7 +1303,7 @@ function App() {
     if (!session) {
         return React.createElement(AuthScreen, null);
     }
-    const TABS = ["Dashboard", "Properties", "Repairs", "Rent History", "Damage Log", "Inspections", "Contractors", "Notices", "Contracts", "Payments"];
+    const TABS = ["Dashboard", "Properties", "Repairs", "Rent History", "Damage Log", "Inspections", "Contractors", "Notices", "Contracts", "Payments", "Property Tax", "Forms", "Resources"];
     return (React.createElement("div", { style: { display: "flex", minHeight: "100vh" } },
         React.createElement("div", { className: "no-print", style: { width: 200, background: C.navy, padding: 20, color: "#fff", flexShrink: 0, display: "flex", flexDirection: "column" } },
             React.createElement("h2", { style: { fontSize: 18, marginBottom: 20 } }, "PropTrack"),
@@ -1201,7 +1322,12 @@ function App() {
                 tab === "Inspections" && !viewInspection && React.createElement("button", { style: btnP, onClick: () => openModal("inspection") }, "+ New Inspection"),
                 tab === "Notices" && React.createElement("button", { style: btnP, onClick: () => openModal("notice") }, "+ Upload Notice"),
                 tab === "Contracts" && React.createElement("button", { style: btnP, onClick: () => openModal("contract") }, "+ Upload Contract"),
-                tab === "Payments" && React.createElement("button", { style: btnP, onClick: () => openModal("payment") }, "+ Log Payment")),
+                tab === "Payments" && React.createElement("button", { style: btnP, onClick: () => openModal("payment") }, "+ Log Payment"),
+                tab === "Property Tax" && React.createElement("button", { style: btnP, onClick: () => openModal("propertyTax") }, "+ Upload Tax Document"),
+                tab === "Forms" && React.createElement("button", { style: btnP, onClick: () => openModal("form") }, "+ Upload Form"),
+                tab === "Resources" && React.createElement("div", { style: { display: "flex", gap: 8 } },
+                    React.createElement("button", { style: btnP, onClick: () => openModal("resource") }, "+ Add Contact"),
+                    React.createElement("button", { style: btnP, onClick: () => openModal("resourceLink") }, "+ Add Link"))),
             loadingData && React.createElement("div", { style: { color: C.muted } }, "Loading your data..."),
             !loadingData && tab === "Dashboard" && (React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 14 } },
                 React.createElement("div", { style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border } },
@@ -1451,6 +1577,52 @@ function App() {
                                 React.createElement("a", { href: ct.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View"),
                                 React.createElement("button", { style: btnDangerSm, onClick: () => deleteContract(ct) }, "Delete")))))));
                 })),
+            !loadingData && tab === "Property Tax" && (properties.length === 0 ? (React.createElement("div", { style: { color: C.muted } }, "Add a property first, then you can upload tax documents for it.")) : (properties.map(p => {
+    const list = propertyTax.filter(t => t.property_id === p.id);
+    return (React.createElement("div", { key: p.id, style: { marginBottom: 16 } },
+        React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8 } }, p.address),
+        list.length === 0 ? (React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 8 } }, "No tax documents uploaded yet.")) : (list.map(t => (React.createElement("div", { key: t.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
+            React.createElement("div", null,
+                React.createElement("div", { style: { fontWeight: 700 } }, t.title),
+                React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, t.tax_year ? "Tax Year: " + t.tax_year : "")),
+            React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                React.createElement("a", { href: t.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View"),
+                React.createElement("button", { style: btnDangerSm, onClick: () => deletePropertyTax(t) }, "Delete"))))))));
+}))),
+            !loadingData && tab === "Forms" && (forms.length === 0 ? (React.createElement("div", { style: { color: C.muted } }, "No forms uploaded yet. Upload templates like lease agreements, 3-day notices, or rent increase letters so they're always on hand to print.")) : (forms.map(fm => (React.createElement("div", { key: fm.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
+    React.createElement("div", null,
+        React.createElement("div", { style: { fontWeight: 700 } }, fm.title),
+        React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, fm.category)),
+    React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+        React.createElement("a", { href: fm.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View / Print"),
+        React.createElement("button", { style: btnDangerSm, onClick: () => deleteForm(fm) }, "Delete"))))))),
+            !loadingData && tab === "Resources" && (React.createElement("div", null,
+    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8 } }, "Contacts"),
+    resources.length === 0 ? (React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 16 } }, "No contacts added yet.")) : (["Real Estate Attorney", "Eviction Attorney", "Listing Agency", "Other"].map(cat => {
+        const list = resources.filter(r => r.category === cat);
+        if (list.length === 0)
+            return null;
+        return (React.createElement("div", { key: cat, style: { marginBottom: 14 } },
+            React.createElement("h4", { style: { color: C.navy, fontSize: 13, marginBottom: 6 } }, cat),
+            list.map(r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
+                React.createElement("div", null,
+                    React.createElement("div", { style: { fontWeight: 700 } }, r.name),
+                    React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
+                        r.phone,
+                        r.email ? " — " + r.email : ""),
+                    r.notes && React.createElement("div", { style: { color: C.muted, fontSize: 12, marginTop: 4 } }, r.notes)),
+                React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                    React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditResource(r) }, "Edit"),
+                    React.createElement("button", { style: btnDangerSm, onClick: () => deleteResource(r) }, "Delete")))))));
+    })),
+    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8, marginTop: 20 } }, "Useful Links"),
+    resourceLinks.length === 0 ? (React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, "No links added yet. Add city building & safety, planning, or rental law sites here for quick access.")) : (resourceLinks.map(l => (React.createElement("div", { key: l.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
+        React.createElement("div", null,
+            React.createElement("div", { style: { fontWeight: 700 } }, l.label),
+            l.notes && React.createElement("div", { style: { color: C.muted, fontSize: 12, marginTop: 4 } }, l.notes)),
+        React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+            React.createElement("a", { href: l.url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "Open"),
+            React.createElement("button", { style: btnDangerSm, onClick: () => deleteResourceLink(l) }, "Delete")))))))),
             !loadingData && tab === "Payments" && (properties.length === 0 ? (React.createElement("div", { style: { color: C.muted } }, "Add a property first, then you can log payments for it.")) : (properties.map(p => {
     const deposits = payments.filter(pm => pm.property_id === p.id && pm.type === "Security Deposit");
     const returns = payments.filter(pm => pm.property_id === p.id && pm.type === "Security Deposit Return");
@@ -1926,6 +2098,64 @@ function App() {
     React.createElement("input", { style: inp, placeholder: "Notes", value: form.notes || "", onChange: e => setF("notes", e.target.value) }),
     React.createElement("div", { style: { display: "flex", gap: 10 } },
         React.createElement("button", { style: btnP, onClick: addPayment }, "Save"),
+        React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "propertyTax" && (React.createElement(Modal, { title: "Upload Tax Document", onClose: closeModal },
+    React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
+        React.createElement("option", { value: "" }, "Select property\u2026"),
+        properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+    React.createElement("input", { style: inp, placeholder: "Title", value: form.taxTitle || "", onChange: e => setF("taxTitle", e.target.value) }),
+    React.createElement("input", { style: inp, placeholder: "Tax Year (e.g. 2026)", value: form.taxYear || "", onChange: e => setF("taxYear", e.target.value) }),
+    React.createElement("input", { style: inp, type: "file", accept: "image/*,application/pdf", onChange: e => setF("taxFile", e.target.files[0]) }),
+    React.createElement("div", { style: { display: "flex", gap: 10 } },
+        React.createElement("button", { style: btnP, onClick: addPropertyTax }, "Upload"),
+        React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "form" && (React.createElement(Modal, { title: "Upload Form", onClose: closeModal },
+    React.createElement("input", { style: inp, placeholder: "Title", value: form.formTitle || "", onChange: e => setF("formTitle", e.target.value) }),
+    React.createElement("select", { style: inp, value: form.formCategory || "", onChange: e => setF("formCategory", e.target.value) },
+        React.createElement("option", { value: "" }, "Select Category\u2026"),
+        React.createElement("option", null, "Month-to-Month Rental Agreement"),
+        React.createElement("option", null, "Lease Agreement"),
+        React.createElement("option", null, "3-Day Notice"),
+        React.createElement("option", null, "Rent Increase Notice"),
+        React.createElement("option", null, "Other")),
+    React.createElement("input", { style: inp, type: "file", accept: "image/*,application/pdf", onChange: e => setF("formFile", e.target.files[0]) }),
+    React.createElement("div", { style: { display: "flex", gap: 10 } },
+        React.createElement("button", { style: btnP, onClick: addForm }, "Upload"),
+        React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "resource" && (React.createElement(Modal, { title: "Add Contact", onClose: closeModal },
+    React.createElement("input", { style: inp, placeholder: "Name", value: form.resourceName || "", onChange: e => setF("resourceName", e.target.value) }),
+    React.createElement("select", { style: inp, value: form.resourceCategory || "", onChange: e => setF("resourceCategory", e.target.value) },
+        React.createElement("option", { value: "" }, "Select Category\u2026"),
+        React.createElement("option", null, "Real Estate Attorney"),
+        React.createElement("option", null, "Eviction Attorney"),
+        React.createElement("option", null, "Listing Agency"),
+        React.createElement("option", null, "Other")),
+    React.createElement("input", { style: inp, placeholder: "Phone", value: form.resourcePhone || "", onChange: e => setF("resourcePhone", e.target.value) }),
+    React.createElement("input", { style: inp, placeholder: "Email", value: form.resourceEmail || "", onChange: e => setF("resourceEmail", e.target.value) }),
+    React.createElement("input", { style: inp, placeholder: "Notes", value: form.resourceNotes || "", onChange: e => setF("resourceNotes", e.target.value) }),
+    React.createElement("div", { style: { display: "flex", gap: 10 } },
+        React.createElement("button", { style: btnP, onClick: addResource }, "Add"),
+        React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "editResource" && (React.createElement(Modal, { title: "Edit Contact", onClose: closeModal },
+    React.createElement("input", { style: inp, placeholder: "Name", value: form.resourceName || "", onChange: e => setF("resourceName", e.target.value) }),
+    React.createElement("select", { style: inp, value: form.resourceCategory || "", onChange: e => setF("resourceCategory", e.target.value) },
+        React.createElement("option", { value: "" }, "Select Category\u2026"),
+        React.createElement("option", null, "Real Estate Attorney"),
+        React.createElement("option", null, "Eviction Attorney"),
+        React.createElement("option", null, "Listing Agency"),
+        React.createElement("option", null, "Other")),
+    React.createElement("input", { style: inp, placeholder: "Phone", value: form.resourcePhone || "", onChange: e => setF("resourcePhone", e.target.value) }),
+    React.createElement("input", { style: inp, placeholder: "Email", value: form.resourceEmail || "", onChange: e => setF("resourceEmail", e.target.value) }),
+    React.createElement("input", { style: inp, placeholder: "Notes", value: form.resourceNotes || "", onChange: e => setF("resourceNotes", e.target.value) }),
+    React.createElement("div", { style: { display: "flex", gap: 10 } },
+        React.createElement("button", { style: btnP, onClick: updateResource }, "Save Changes"),
+        React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "resourceLink" && (React.createElement(Modal, { title: "Add Link", onClose: closeModal },
+    React.createElement("input", { style: inp, placeholder: "Label (e.g. City Building & Safety)", value: form.linkLabel || "", onChange: e => setF("linkLabel", e.target.value) }),
+    React.createElement("input", { style: inp, placeholder: "Website URL", value: form.linkUrl || "", onChange: e => setF("linkUrl", e.target.value) }),
+    React.createElement("input", { style: inp, placeholder: "Notes (optional)", value: form.linkNotes || "", onChange: e => setF("linkNotes", e.target.value) }),
+    React.createElement("div", { style: { display: "flex", gap: 10 } },
+        React.createElement("button", { style: btnP, onClick: addResourceLink }, "Add"),
         React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel"))))));
 }
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
