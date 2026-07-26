@@ -573,16 +573,34 @@ function App() {
         return () => listener.subscription.unsubscribe();
     }, []);
     useEffect(() => {
-        const handleHidden = () => {
+        // A brief trip to the camera or file picker also counts as "hidden," so signing out
+        // instantly would interrupt logging a repair or uploading a document mid-task.
+        // Instead, wait a bit after the app goes to the background before locking it —
+        // long enough to snap a photo or pick a file, short enough to still lock a phone
+        // that's genuinely been set down and left.
+        let hideTimer = null;
+        const LOCK_DELAY_MS = 90000;
+        const handleVisibility = () => {
             if (document.hidden) {
-                sb.auth.signOut();
+                hideTimer = setTimeout(() => {
+                    sb.auth.signOut();
+                }, LOCK_DELAY_MS);
+            }
+            else if (hideTimer) {
+                clearTimeout(hideTimer);
+                hideTimer = null;
             }
         };
-        document.addEventListener("visibilitychange", handleHidden);
-        window.addEventListener("pagehide", handleHidden);
+        const handlePageHide = () => {
+            sb.auth.signOut();
+        };
+        document.addEventListener("visibilitychange", handleVisibility);
+        window.addEventListener("pagehide", handlePageHide);
         return () => {
-            document.removeEventListener("visibilitychange", handleHidden);
-            window.removeEventListener("pagehide", handleHidden);
+            document.removeEventListener("visibilitychange", handleVisibility);
+            window.removeEventListener("pagehide", handlePageHide);
+            if (hideTimer)
+                clearTimeout(hideTimer);
         };
     }, []);
     useEffect(() => {
