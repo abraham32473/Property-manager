@@ -573,32 +573,39 @@ function App() {
         return () => listener.subscription.unsubscribe();
     }, []);
     useEffect(() => {
-        // A brief trip to the camera or file picker also counts as "hidden," so signing out
-        // instantly would interrupt logging a repair or uploading a document mid-task.
-        // Instead, wait a bit after the app goes to the background before locking it —
-        // long enough to snap a photo or pick a file, short enough to still lock a phone
-        // that's genuinely been set down and left.
+        // A brief trip to the camera, a file picker, or tapping the back button can all
+        // trigger these same browser signals, so treating any of them as an instant
+        // sign-out would interrupt normal use. Instead, every one of them starts the same
+        // 90-second grace timer — coming back in time (even via back button) cancels it and
+        // keeps the session going; not coming back in time locks the app either way.
         let hideTimer = null;
         const LOCK_DELAY_MS = 90000;
-        const handleVisibility = () => {
-            if (document.hidden) {
+        const startLockTimer = () => {
+            if (!hideTimer) {
                 hideTimer = setTimeout(() => {
                     sb.auth.signOut();
                 }, LOCK_DELAY_MS);
             }
-            else if (hideTimer) {
+        };
+        const cancelLockTimer = () => {
+            if (hideTimer) {
                 clearTimeout(hideTimer);
                 hideTimer = null;
             }
         };
-        const handlePageHide = () => {
-            sb.auth.signOut();
+        const handleVisibility = () => {
+            if (document.hidden)
+                startLockTimer();
+            else
+                cancelLockTimer();
         };
         document.addEventListener("visibilitychange", handleVisibility);
-        window.addEventListener("pagehide", handlePageHide);
+        window.addEventListener("pagehide", startLockTimer);
+        window.addEventListener("pageshow", cancelLockTimer);
         return () => {
             document.removeEventListener("visibilitychange", handleVisibility);
-            window.removeEventListener("pagehide", handlePageHide);
+            window.removeEventListener("pagehide", startLockTimer);
+            window.removeEventListener("pageshow", cancelLockTimer);
             if (hideTimer)
                 clearTimeout(hideTimer);
         };
@@ -2055,7 +2062,9 @@ function App() {
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
                 React.createElement("option", { value: "" }, "Select property\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
-            React.createElement("input", { style: inp, placeholder: "Inspection Type (e.g. Move-in, New Acquisition)", value: form.inspectionType || "", onChange: e => setF("inspectionType", e.target.value) }),
+            React.createElement("select", { style: inp, value: form.inspectionType || "", onChange: e => setF("inspectionType", e.target.value) },
+                React.createElement("option", { value: "" }, "Select Inspection Type\u2026"),
+                ["Move-in", "Move-out", "New Acquisition", "Other"].map(t => React.createElement("option", { key: t, value: t }, t))),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: addInspection }, "Create"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
