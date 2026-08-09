@@ -34,7 +34,6 @@ const btnP = { background: C.navy, color: "#fff", border: "none", borderRadius: 
 const btnS = { background: "transparent", color: C.navy, border: "1px solid " + C.border, borderRadius: 6, padding: "9px 18px", fontWeight: 600 };
 const btnDanger = { background: "transparent", color: C.red, border: "1px solid " + C.red, borderRadius: 6, padding: "9px 18px", fontWeight: 600 };
 const btnDangerSm = { background: "transparent", color: C.red, border: "1px solid " + C.red, borderRadius: 6, padding: "5px 10px", fontWeight: 600, fontSize: 12, cursor: "pointer" };
-// Extracts the storage object path from a Supabase public URL for a given bucket
 function extractStoragePath(url, bucket) {
     if (!url)
         return null;
@@ -44,7 +43,6 @@ function extractStoragePath(url, bucket) {
         return null;
     return url.slice(idx + marker.length);
 }
-// Fetches an image URL and converts it to a base64 data URL for PDF embedding
 async function loadImageAsDataURL(url) {
     try {
         const res = await fetch(url);
@@ -60,7 +58,6 @@ async function loadImageAsDataURL(url) {
         return null;
     }
 }
-// Gets natural pixel dimensions of a loaded image so it can be scaled proportionally in the PDF
 function getImageSize(dataUrl) {
     return new Promise((resolve) => {
         const img = new Image();
@@ -69,7 +66,6 @@ function getImageSize(dataUrl) {
         img.src = dataUrl;
     });
 }
-// Builds a letterhead-styled PDF report for an inspection (title, address, sections, embedded photos)
 async function buildInspectionReportPdf(insp, propertyAddress, contractorNameFn) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: "pt", format: "letter" });
@@ -142,6 +138,83 @@ async function buildInspectionReportPdf(insp, propertyAddress, contractorNameFn)
         }
         y += 8;
     }
+    return doc.output("blob");
+}
+function buildYearStatementPdf(p, year, stmt) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: "pt", format: "letter" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginX = 40;
+    const maxWidth = pageWidth - marginX * 2;
+    let y = 50;
+    const ensureSpace = (needed) => {
+        if (y + needed > pageHeight - 40) {
+            doc.addPage();
+            y = 50;
+        }
+    };
+    doc.setFont(undefined, "bold");
+    doc.setFontSize(18);
+    doc.text(`${year} Year-End Statement`, marginX, y);
+    y += 10;
+    doc.setDrawColor(26, 39, 68);
+    doc.line(marginX, y, pageWidth - marginX, y);
+    y += 24;
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(13);
+    doc.text(p.address, marginX, y);
+    y += 20;
+    doc.setFontSize(10);
+    doc.setTextColor(107, 122, 153);
+    doc.text(`Statement period: Jan 1 \u2013 Dec 31, ${year}`, marginX, y);
+    doc.setTextColor(26, 39, 68);
+    y += 30;
+    const section = (title, items, lineFn, total) => {
+        ensureSpace(40);
+        doc.setFont(undefined, "bold");
+        doc.setFontSize(13);
+        doc.text(title, marginX, y);
+        y += 18;
+        doc.setFont(undefined, "normal");
+        doc.setFontSize(10);
+        if (items.length === 0) {
+            doc.setTextColor(107, 122, 153);
+            doc.text("None recorded for this year.", marginX, y);
+            doc.setTextColor(26, 39, 68);
+            y += 16;
+        }
+        else {
+            items.forEach(it => {
+                ensureSpace(14);
+                const lines = doc.splitTextToSize(lineFn(it), maxWidth);
+                doc.text(lines, marginX, y);
+                y += lines.length * 13;
+            });
+        }
+        y += 4;
+        doc.setFont(undefined, "bold");
+        doc.text(`Subtotal: $${total.toFixed(2)}`, marginX, y);
+        doc.setFont(undefined, "normal");
+        y += 26;
+    };
+    section("Repairs", stmt.pRepairs, r => `${r.created_at ? new Date(r.created_at).toLocaleDateString() : ""} \u2014 ${r.trade || "Repair"} \u2014 $${Number(r.cost || 0).toFixed(2)}`, stmt.repairsTotal);
+    section("Tenant Damage", stmt.pDamages, d => `${d.created_at ? new Date(d.created_at).toLocaleDateString() : ""} \u2014 ${d.description || d.severity || "Damage"} \u2014 $${Number(d.estimated_cost || 0).toFixed(2)}`, stmt.damageTotal);
+    section("Lawn Care", stmt.pLawn, l => `${new Date(l.paid_date + "T00:00:00").toLocaleDateString()} \u2014 $${Number(l.amount || 0).toFixed(2)}`, stmt.lawnTotal);
+    section("Utilities (Landlord-Paid)", stmt.pUtils, u => `${new Date(u.bill_date + "T00:00:00").toLocaleDateString()} \u2014 ${u.utility_type} \u2014 $${Number(u.amount || 0).toFixed(2)}`, stmt.utilTotal);
+    ensureSpace(50);
+    doc.setDrawColor(232, 168, 56);
+    doc.line(marginX, y, pageWidth - marginX, y);
+    y += 22;
+    doc.setFont(undefined, "bold");
+    doc.setFontSize(15);
+    doc.text(`Total Expenses for ${year}: $${stmt.grandTotal.toFixed(2)}`, marginX, y);
+    y += 24;
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(107, 122, 153);
+    const disclaimer = doc.splitTextToSize("This statement organizes figures recorded in LandlordHub. It is not tax advice and does not replace your accountant or tax preparer.", maxWidth);
+    doc.text(disclaimer, marginX, y);
     return doc.output("blob");
 }
 async function buildPropertyReportPdf(p, pRepairs, pDamages, pRent, pInspections, pNotices, pContracts, contractorNameFn) {
@@ -303,8 +376,6 @@ async function buildPropertyReportPdf(p, pRepairs, pDamages, pRent, pInspections
     }
     return doc.output("blob");
 }
-// Builds a rent receipt PDF for a given property and month, listing each payment received,
-// any credit carried in/out from adjacent months, and the landlord's signature.
 async function buildRentReceiptPdf(property, monthLabelText, rangeText, entry, landlordProfile) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: "pt", format: "letter" });
@@ -376,8 +447,6 @@ async function buildRentReceiptPdf(property, monthLabelText, rangeText, entry, l
     }
     return doc.output("blob");
 }
-// Opens the device's mail app via a temporary anchor click, which is more reliable
-// on mobile browsers than setting window.location.href directly (which can silently fail).
 function openMailto(mailtoUrl) {
     try {
         const link = document.createElement("a");
@@ -391,7 +460,6 @@ function openMailto(mailtoUrl) {
         alert("Couldn't open your email app. Please make sure a mail app is set up on this device.");
     }
 }
-// Retries a Supabase call a few times before giving up, to smooth over brief connection drops
 async function withRetry(fn, attempts = 3, delayMs = 1000) {
     let lastError = null;
     for (let i = 0; i < attempts; i++) {
@@ -472,6 +540,86 @@ function AuthScreen() {
                     React.createElement("span", { style: { color: C.blue, cursor: "pointer" }, onClick: () => { setMode("login"); setError(""); } }, "Log in")),
                 mode === "reset" && React.createElement("span", { style: { color: C.blue, cursor: "pointer" }, onClick: () => { setMode("login"); setError(""); } }, "Back to login")))));
 }
+function HelpTab() {
+    const [open, setOpen] = useState(null);
+    const SECTIONS = [
+        { key: "dashboard", tag: "Overview", color: C.navy, title: "Dashboard", body: [
+            "Your at-a-glance summary: monthly rent, open repairs, and quick stats across every property you manage."
+        ]},
+        { key: "properties", tag: "Setup", color: C.navy, title: "Properties", body: [
+            "Add a property with its address and details first — repairs, tenants, inspections, and documents all attach to a property record.",
+            "Tap + Add Property from this tab to get started."
+        ]},
+        { key: "tenants", tag: "Tenant Portal", color: C.blue, title: "Tenant Requests & Inviting Tenants", body: [
+            "Tap + Invite Tenant, enter their name and email — you'll get a one-time invite code.",
+            "Send the code (tap Email Invite, or share it yourself). Your tenant opens the tenant portal, taps Activate Invite, enters the code, and sets a password.",
+            "Once active, tenants can submit repair requests with photos any time. Requests land here for you to review.",
+            "Tap Push to Repairs to turn a tenant's request into a tracked repair job with cost and priority."
+        ]},
+        { key: "repairs", tag: "Maintenance", color: C.blue, title: "Repairs", body: [
+            "Log any repair job — trade, priority, cost, and notes — whether it came from a tenant request or you started it yourself.",
+            "Assign a contractor and update status as work progresses. Costs here total automatically per property."
+        ]},
+        { key: "rent-history", tag: "Rent", color: C.green, title: "Rent History", body: [
+            "Track rent increases over time per property, so you always have a record of what changed and when."
+        ]},
+        { key: "damage", tag: "Damage", color: C.red, title: "Damage Log", body: [
+            "Use this specifically for damage a tenant caused — separate from routine repairs.",
+            "Log a severity, an estimated cost, and a photo. Then decide: repaired and billed, or deducted from their security deposit at move-out."
+        ]},
+        { key: "inspections", tag: "Inspections", color: C.orange, title: "Inspections", body: [
+            "Document a property's condition at a specific moment — new acquisition, move-in, move-out, or routine.",
+            "A move-in record is your baseline; comparing it to the move-out record shows what's normal wear versus tenant damage."
+        ]},
+        { key: "contractors", tag: "Contacts", color: C.navy, title: "Contractors", body: [
+            "Keep your go-to contractors on file so you can assign them to repair jobs without hunting for a phone number."
+        ]},
+        { key: "notices", tag: "Documents", color: C.navy, title: "Notices", body: [
+            "Upload notices you've served — rent increases, entry notices, and more — filed under the property they belong to."
+        ]},
+        { key: "contracts", tag: "Documents", color: C.navy, title: "Contracts", body: [
+            "Upload leases and rental agreements per property, so they're always on hand."
+        ]},
+        { key: "payments", tag: "Payments", color: C.green, title: "Payments", body: [
+            "Log rent payments (including partial payments — the balance carries forward), and track security deposits and their return.",
+            "Generate a signed rent receipt for any payment."
+        ]},
+        { key: "lawn-care", tag: "Recurring", color: C.navy, title: "Lawn Care", body: [
+            "Set up a recurring lawn care expense once — company name, amount, and the day of the month it's due — and it gets marked paid automatically each month, no re-entering needed.",
+            "Edit the amount anytime the price changes; past payments already on record stay untouched. Upload the receipt to any payment once the company sends it."
+        ]},
+        { key: "utilities", tag: "Bills", color: C.blue, title: "Utilities", body: [
+            "Log each utility bill (water, gas, electric, trash, sewer) per property, and mark whether the landlord or the tenant is responsible for it.",
+            "Only bills marked \"Landlord Pays\" count toward your deductible expenses at tax time — tenant-paid bills are just kept on record."
+        ]},
+        { key: "property-tax", tag: "Tax", color: C.green, title: "Property Tax", body: [
+            "This is where everything comes together. Check the Repairs tab for a property's total repair cost for the year, Damage Log for tenant-caused damage, and Lawn Care and Utilities for recurring and per-bill expenses.",
+            "Upload supporting tax documents here per property — prior returns, 1098s, anything your accountant needs.",
+            "LandlordHub organizes and totals your figures; it doesn't file taxes or replace your accountant."
+        ]},
+        { key: "forms", tag: "Templates", color: C.navy, title: "Forms", body: [
+            "A library of blank templates you reuse across properties."
+        ]},
+        { key: "resources", tag: "Reference", color: C.navy, title: "Resources", body: [
+            "Contractor contacts and useful reference links, kept in one place."
+        ]},
+        { key: "profile", tag: "Account", color: C.navy, title: "My Profile", body: [
+            "Set your signature (used on receipts and documents) and manage your account details."
+        ]},
+    ];
+    return React.createElement("div", { style: { maxWidth: 720 } },
+        React.createElement("div", { style: { color: C.muted, fontSize: 14, marginBottom: 18 } }, "Tap any section below for a quick explanation of how it works."),
+        SECTIONS.map(s => React.createElement("div", { key: s.key, style: { background: "#fff", borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10, overflow: "hidden" } },
+            React.createElement("div", { onClick: () => setOpen(open === s.key ? null : s.key), style: { padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 } },
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" } },
+                    React.createElement("span", { style: { background: s.color, color: "#fff", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 100, whiteSpace: "nowrap" } }, s.tag),
+                    React.createElement("span", { style: { fontWeight: 700, color: C.navy } }, s.title)),
+                React.createElement("span", { style: { color: C.muted, fontSize: 18, flexShrink: 0 } }, open === s.key ? "\u2212" : "+")),
+            open === s.key && React.createElement("div", { style: { padding: "0 16px 16px", color: C.text, fontSize: 13.5, lineHeight: 1.6 } },
+                s.body.map((p, i) => React.createElement("p", { key: i, style: { marginBottom: i < s.body.length - 1 ? 8 : 0 } }, p)))
+        ))
+    );
+}
 function App() {
     const [session, setSession] = useState(null);
     const [checkingSession, setCheckingSession] = useState(true);
@@ -495,6 +643,12 @@ function App() {
     const [resources, setResources] = useState([]);
     const [resourceLinks, setResourceLinks] = useState([]);
     const [profile, setProfile] = useState(null);
+    const [tenants, setTenants] = useState([]);
+    const [tenantRequests, setTenantRequests] = useState([]);
+    const [lawnCare, setLawnCare] = useState([]);
+    const [lawnCarePayments, setLawnCarePayments] = useState([]);
+    const [statementYear, setStatementYear] = useState(new Date().getFullYear());
+    const [utilities, setUtilities] = useState([]);
     const [modal, setModal] = useState(() => { try {
         return sessionStorage.getItem("pt_modal") || null;
     }
@@ -528,6 +682,7 @@ function App() {
     const [printProperty, setPrintProperty] = useState(null);
     const [showReceipts, setShowReceipts] = useState(false);
     const [printReceipts, setPrintReceipts] = useState(null);
+    const [lastInviteCode, setLastInviteCode] = useState(null);
     useEffect(() => {
         try {
             sessionStorage.setItem("pt_tab", tab);
@@ -574,10 +729,6 @@ function App() {
         catch (e) { }
     }, [form]);
     useEffect(() => {
-        // A phone can fully reload this page after the back button or a long background —
-        // wiping out any in-memory timer along with everything else. So the real 3-minute
-        // cutoff is tracked here as a saved timestamp, checked fresh on every load, not just
-        // while the page happens to stay running.
         const LOCK_DELAY_MS = 180000;
         const HIDDEN_AT_KEY = "pt_hidden_at";
         const markHidden = () => {
@@ -596,8 +747,6 @@ function App() {
             }
             catch (e) { }
         };
-        // Catches a full close-and-reopen that happened after the grace period — check the
-        // instant this effect mounts, before anything else runs.
         checkAndClear();
         let liveTimer = null;
         const handleVisibility = () => {
@@ -642,7 +791,7 @@ function App() {
     }, [session]);
     const loadAllData = async () => {
         setLoadingData(true);
-        const [p, r, rh, d, c, ins, nt, ct, pm, pt, fm, res, rl, pr] = await Promise.all([
+        const [p, r, rh, d, c, ins, nt, ct, pm, pt, fm, res, rl, pr, tn, rq, lc, lcp, ut] = await Promise.all([
             sb.from("properties").select("*").order("id"),
             sb.from("repairs").select("*").order("id"),
             sb.from("rent_history").select("*").order("id"),
@@ -657,6 +806,11 @@ function App() {
             sb.from("resources").select("*").order("id"),
             sb.from("resource_links").select("*").order("id"),
             sb.from("profiles").select("*"),
+            sb.from("tenants").select("*").order("id"),
+            sb.from("repair_requests").select("*").order("created_at", { ascending: false }),
+            sb.from("lawn_care").select("*").order("id"),
+            sb.from("lawn_care_payments").select("*").order("paid_date", { ascending: false }),
+            sb.from("utilities").select("*").order("bill_date", { ascending: false }),
         ]);
         if (p.data)
             setProperties(p.data);
@@ -686,14 +840,50 @@ function App() {
             setResourceLinks(rl.data);
         if (pr.data && pr.data[0])
             setProfile(pr.data[0]);
+        if (tn.data)
+            setTenants(tn.data);
+        if (rq.data)
+            setTenantRequests(rq.data);
+        if (lc.data)
+            setLawnCare(lc.data);
+        if (lcp.data)
+            setLawnCarePayments(lcp.data);
+        if (ut.data)
+            setUtilities(ut.data);
+        if (lc.data && lcp.data)
+            await ensureLawnCarePayments(lc.data, lcp.data);
         setLoadingData(false);
+    };
+    const ensureLawnCarePayments = async (lcList, lcpList) => {
+        const today = new Date();
+        const existingKeys = new Set(lcpList.map(pmt => `${pmt.lawn_care_id}-${pmt.paid_date.slice(0, 7)}`));
+        const toInsert = [];
+        lcList.filter(lc => lc.active).forEach(lc => {
+            const start = new Date(lc.start_date + "T00:00:00");
+            let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+            const endMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            while (cursor <= endMonth) {
+                const y = cursor.getFullYear(), m = cursor.getMonth();
+                const dueDate = new Date(y, m, lc.day_of_month);
+                const monthKey = `${y}-${String(m + 1).padStart(2, "0")}`;
+                const key = `${lc.id}-${monthKey}`;
+                if (dueDate <= today && !existingKeys.has(key)) {
+                    toInsert.push({ lawn_care_id: lc.id, user_id: lc.user_id, property_id: lc.property_id, amount: lc.amount, paid_date: dueDate.toISOString().slice(0, 10) });
+                    existingKeys.add(key);
+                }
+                cursor = new Date(y, m + 1, 1);
+            }
+        });
+        if (toInsert.length > 0) {
+            const { data } = await withRetry(() => sb.from("lawn_care_payments").insert(toInsert).select());
+            if (data)
+                setLawnCarePayments(prev => [...data, ...prev]);
+        }
     };
     const [resetKey, setResetKey] = useState(0);
     const openModal = (t) => { setModal(t); setForm({}); setResetKey(k => k + 1); };
     const closeModal = () => { setModal(null); setForm({}); setResetKey(k => k + 1); };
     const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
-    // Some phones hand back an empty/broken file when the camera capture fails to save properly.
-    // This catches that immediately so the person can retake the photo before trying to log anything.
     const handlePhotoSelect = (e, key) => {
         const file = e.target.files[0];
         if (!file) {
@@ -758,16 +948,28 @@ function App() {
         closeModal();
     };
     const openEditRepair = (r) => {
-        setForm({ repairId: r.id, propertyId: String(r.property_id), title: r.title, trade: r.trade || "", priority: r.priority, cost: r.cost, notes: r.notes || "", repairContractorId: r.contractor_id ? String(r.contractor_id) : "" });
+        setForm({ repairId: r.id, propertyId: String(r.property_id), title: r.title, trade: r.trade || "", priority: r.priority, cost: r.cost, notes: r.notes || "", repairContractorId: r.contractor_id ? String(r.contractor_id) : "", existingPhotoUrl: r.photo_url || null });
         setModal("editRepair");
     };
     const updateRepair = async () => {
         if (!form.repairId || !form.title || !form.propertyId)
             return;
-        const { error } = await withRetry(() => sb.from("repairs").update({ property_id: Number(form.propertyId), title: form.title, trade: form.trade || "General", priority: form.priority || "Medium", cost: Number(form.cost) || 0, notes: form.notes || "", contractor_id: form.repairContractorId ? Number(form.repairContractorId) : null }).eq("id", form.repairId));
+        let photoUrl = form.existingPhotoUrl || null;
+        if (form.photoFile) {
+            const fileName = `${userId()}/${Date.now()}_${form.photoFile.name}`;
+            const { error: upErr } = await withRetry(() => sb.storage.from("landlord-photos").upload(fileName, form.photoFile));
+            if (!upErr) {
+                const { data: urlData } = sb.storage.from("landlord-photos").getPublicUrl(fileName);
+                photoUrl = urlData.publicUrl;
+            }
+            else {
+                alert("The photo upload had trouble connecting, so the existing photo (if any) was kept. Try again once you have a better connection.");
+            }
+        }
+        const { error } = await withRetry(() => sb.from("repairs").update({ property_id: Number(form.propertyId), title: form.title, trade: form.trade || "General", priority: form.priority || "Medium", cost: Number(form.cost) || 0, notes: form.notes || "", contractor_id: form.repairContractorId ? Number(form.repairContractorId) : null, photo_url: photoUrl }).eq("id", form.repairId));
         showErr(error);
         if (!error) {
-            setRepairs(rs => rs.map(r => r.id === form.repairId ? { ...r, property_id: Number(form.propertyId), title: form.title, trade: form.trade || "General", priority: form.priority || "Medium", cost: Number(form.cost) || 0, notes: form.notes || "", contractor_id: form.repairContractorId ? Number(form.repairContractorId) : null } : r));
+            setRepairs(rs => rs.map(r => r.id === form.repairId ? { ...r, property_id: Number(form.propertyId), title: form.title, trade: form.trade || "General", priority: form.priority || "Medium", cost: Number(form.cost) || 0, notes: form.notes || "", contractor_id: form.repairContractorId ? Number(form.repairContractorId) : null, photo_url: photoUrl } : r));
             closeModal();
         }
     };
@@ -817,6 +1019,144 @@ function App() {
         if (!error) {
             setDamages(ds => ds.map(d => d.id === form.damageId ? { ...d, property_id: Number(form.propertyId), description: form.description, severity: form.severity || "Minor", estimated_cost: Number(form.estimatedCost) || 0 } : d));
             closeModal();
+        }
+    };
+    const addLawnCare = async () => {
+        if (!form.propertyId || !form.amount || !form.dayOfMonth)
+            return;
+        const { data, error } = await withRetry(() => sb.from("lawn_care").insert({ user_id: userId(), property_id: Number(form.propertyId), company_name: form.companyName || "", amount: Number(form.amount) || 0, day_of_month: Math.min(28, Math.max(1, Number(form.dayOfMonth) || 1)), start_date: form.startDate || new Date().toISOString().slice(0, 10), active: true }).select());
+        showErr(error);
+        if (data) {
+            setLawnCare(lcs => [...lcs, ...data]);
+            await ensureLawnCarePayments(data, lawnCarePayments);
+        }
+        closeModal();
+    };
+    const openEditLawnCare = (lc) => {
+        setForm({ lawnCareId: lc.id, propertyId: String(lc.property_id), companyName: lc.company_name || "", amount: lc.amount, dayOfMonth: lc.day_of_month, startDate: lc.start_date });
+        setModal("editLawnCare");
+    };
+    const updateLawnCare = async () => {
+        if (!form.lawnCareId || !form.propertyId || !form.amount || !form.dayOfMonth)
+            return;
+        const updates = { property_id: Number(form.propertyId), company_name: form.companyName || "", amount: Number(form.amount) || 0, day_of_month: Math.min(28, Math.max(1, Number(form.dayOfMonth) || 1)) };
+        const { error } = await withRetry(() => sb.from("lawn_care").update(updates).eq("id", form.lawnCareId));
+        showErr(error);
+        if (!error) {
+            setLawnCare(lcs => lcs.map(lc => lc.id === form.lawnCareId ? { ...lc, ...updates } : lc));
+            closeModal();
+        }
+    };
+    const deactivateLawnCare = async (lc) => {
+        if (!confirm(`Stop recurring lawn care for "${lc.company_name || "this property"}"? Past payment history will stay on record for your taxes — this only stops future auto-billing. You can start a new one anytime.`))
+            return;
+        const { error } = await withRetry(() => sb.from("lawn_care").update({ active: false }).eq("id", lc.id));
+        showErr(error);
+        if (!error)
+            setLawnCare(lcs => lcs.map(x => x.id === lc.id ? { ...x, active: false } : x));
+    };
+    const reactivateLawnCare = async (lc) => {
+        const { error } = await withRetry(() => sb.from("lawn_care").update({ active: true, start_date: new Date().toISOString().slice(0, 10) }).eq("id", lc.id));
+        showErr(error);
+        if (!error)
+            setLawnCare(lcs => lcs.map(x => x.id === lc.id ? { ...x, active: true, start_date: new Date().toISOString().slice(0, 10) } : x));
+    };
+    const uploadLawnCareReceipt = async (payment, file) => {
+        if (!file)
+            return;
+        const fileName = `${userId()}/${Date.now()}_${file.name}`;
+        const { error: upErr } = await withRetry(() => sb.storage.from("landlord-docs").upload(fileName, file, { contentType: file.type || undefined }));
+        if (upErr) {
+            alert("The receipt upload had trouble connecting. Please try again.");
+            return;
+        }
+        const { data: urlData } = sb.storage.from("landlord-docs").getPublicUrl(fileName);
+        const { error } = await withRetry(() => sb.from("lawn_care_payments").update({ receipt_url: urlData.publicUrl }).eq("id", payment.id));
+        showErr(error);
+        if (!error)
+            setLawnCarePayments(ps => ps.map(p => p.id === payment.id ? { ...p, receipt_url: urlData.publicUrl } : p));
+    };
+    const addUtility = async () => {
+        if (!form.propertyId || !form.utilityType)
+            return;
+        let fileUrl = null;
+        if (form.utilityFile) {
+            const fileName = `${userId()}/${Date.now()}_${form.utilityFile.name}`;
+            const { error: upErr } = await withRetry(() => sb.storage.from("landlord-docs").upload(fileName, form.utilityFile, { contentType: form.utilityFile.type || undefined }));
+            if (!upErr) {
+                const { data: urlData } = sb.storage.from("landlord-docs").getPublicUrl(fileName);
+                fileUrl = urlData.publicUrl;
+            }
+            else {
+                alert("The bill upload had trouble connecting, so this entry will be saved without it. You can add it later if needed.");
+            }
+        }
+        const { data, error } = await withRetry(() => sb.from("utilities").insert({ user_id: userId(), property_id: Number(form.propertyId), utility_type: form.utilityType || "Water", responsibility: form.responsibility || "tenant", amount: form.amount ? Number(form.amount) : null, bill_date: form.billDate || new Date().toISOString().slice(0, 10), file_url: fileUrl, notes: form.notes || "" }).select());
+        showErr(error);
+        if (data)
+            setUtilities(us => [...data, ...us]);
+        closeModal();
+    };
+    const openEditUtility = (u) => {
+        setForm({ utilityId: u.id, propertyId: String(u.property_id), utilityType: u.utility_type, responsibility: u.responsibility, amount: u.amount, billDate: u.bill_date, notes: u.notes || "" });
+        setModal("editUtility");
+    };
+    const updateUtility = async () => {
+        if (!form.utilityId || !form.propertyId || !form.utilityType)
+            return;
+        const updates = { property_id: Number(form.propertyId), utility_type: form.utilityType, responsibility: form.responsibility || "tenant", amount: form.amount ? Number(form.amount) : null, bill_date: form.billDate || new Date().toISOString().slice(0, 10), notes: form.notes || "" };
+        const { error } = await withRetry(() => sb.from("utilities").update(updates).eq("id", form.utilityId));
+        showErr(error);
+        if (!error) {
+            setUtilities(us => us.map(u => u.id === form.utilityId ? { ...u, ...updates } : u));
+            closeModal();
+        }
+    };
+    const deleteUtility = async (u) => {
+        if (!window.confirm(`Delete this ${u.utility_type} bill record?`))
+            return;
+        if (u.file_url) {
+            const path = extractStoragePath(u.file_url, "landlord-docs");
+            if (path)
+                await sb.storage.from("landlord-docs").remove([path]);
+        }
+        const { error } = await sb.from("utilities").delete().eq("id", u.id);
+        showErr(error);
+        if (!error)
+            setUtilities(us => us.filter(x => x.id !== u.id));
+    };
+    const getYearStatement = (propertyId, year) => {
+        const inYear = (dateStr) => dateStr && new Date(dateStr).getFullYear() === year;
+        const pRepairs = repairs.filter(r => r.property_id === propertyId && inYear(r.created_at));
+        const pDamages = damages.filter(d => d.property_id === propertyId && inYear(d.created_at));
+        const pLawn = lawnCarePayments.filter(pmt => pmt.property_id === propertyId && inYear(pmt.paid_date));
+        const pUtils = utilities.filter(u => u.property_id === propertyId && u.responsibility === "landlord" && inYear(u.bill_date));
+        const repairsTotal = pRepairs.reduce((s, r) => s + (Number(r.cost) || 0), 0);
+        const damageTotal = pDamages.reduce((s, d) => s + (Number(d.estimated_cost) || 0), 0);
+        const lawnTotal = pLawn.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+        const utilTotal = pUtils.reduce((s, u) => s + (Number(u.amount) || 0), 0);
+        return { pRepairs, pDamages, pLawn, pUtils, repairsTotal, damageTotal, lawnTotal, utilTotal, grandTotal: repairsTotal + damageTotal + lawnTotal + utilTotal };
+    };
+    const downloadYearStatement = async (p, year) => {
+        const stmt = getYearStatement(p.id, year);
+        try {
+            const pdfBlob = buildYearStatementPdf(p, year, stmt);
+            const fileName = `${userId()}/reports/${Date.now()}_statement_${p.id}_${year}.pdf`;
+            let upErr = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const result = await sb.storage.from("landlord-photos").upload(fileName, pdfBlob, { contentType: "application/pdf", upsert: true });
+                upErr = result.error;
+                if (!upErr)
+                    break;
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            if (upErr)
+                throw upErr;
+            const { data: urlData } = sb.storage.from("landlord-photos").getPublicUrl(fileName);
+            window.open(urlData.publicUrl, "_blank");
+        }
+        catch (e) {
+            alert("The statement had trouble generating. Please check your connection and try again.");
         }
     };
     const addContractor = async () => {
@@ -1065,7 +1405,64 @@ function App() {
         showErr(error);
         setDamages(ds => ds.map(d => d.id === id ? { ...d, status } : d));
     };
-    // ---- DELETE FUNCTIONS ----
+    const addTenantInvite = async () => {
+        if (!form.tenantPropertyId || !form.tenantFullName)
+            return;
+        const { data, error } = await sb.from("tenants").insert({
+            landlord_id: userId(),
+            property_id: Number(form.tenantPropertyId),
+            full_name: form.tenantFullName,
+            email: form.tenantInviteEmail || null,
+            phone: form.tenantInvitePhone || null,
+        }).select();
+        showErr(error);
+        if (data && data[0]) {
+            setTenants(t => [...t, ...data]);
+            setLastInviteCode(data[0]);
+        }
+        closeModal();
+    };
+    const emailTenantInvite = (t) => {
+        const subject = encodeURIComponent("Your LandlordHub Maintenance Portal Access");
+        const body = encodeURIComponent(`Hi ${t.full_name},\n\nYou can now submit and track repair requests online.\n\n1. Go to: https://landlord-hub-three.vercel.app/tenant.html\n2. Tap "Activate Invite"\n3. Invite Code: ${t.invite_code}\n4. Use this email address: ${t.email || "(the email you'd like to use)"}\n5. Create a password\n\nOnce activated, you can submit maintenance requests with photos any time.`);
+        openMailto(`mailto:${t.email || ""}?subject=${subject}&body=${body}`);
+    };
+    const updateRequestStatus = async (id, status) => {
+        const { error } = await sb.from("repair_requests").update({ status }).eq("id", id);
+        showErr(error);
+        if (!error)
+            setTenantRequests(rs => rs.map(r => r.id === id ? { ...r, status } : r));
+    };
+    const saveRequestNote = async (id, note) => {
+        const { error } = await sb.from("repair_requests").update({ landlord_note: note }).eq("id", id);
+        showErr(error);
+        if (!error)
+            setTenantRequests(rs => rs.map(r => r.id === id ? { ...r, landlord_note: note } : r));
+    };
+    const pushRequestToRepairs = async (req) => {
+        const urgencyToPriority = { urgent: "High", medium: "Medium", low: "Low" };
+        const { data, error } = await withRetry(() => sb.from("repairs").insert({
+            user_id: userId(),
+            property_id: req.property_id,
+            title: req.description,
+            priority: urgencyToPriority[req.urgency] || "Medium",
+            status: "Open",
+            cost: 0,
+            notes: "Submitted by tenant via Maintenance Portal.",
+            trade: "General",
+            photo_url: req.photo_url || null,
+        }).select());
+        showErr(error);
+        if (data && data[0]) {
+            setRepairs(rs => [...rs, ...data]);
+            const { error: linkErr } = await sb.from("repair_requests").update({ linked_repair_id: data[0].id, status: "acknowledged" }).eq("id", req.id);
+            showErr(linkErr);
+            if (!linkErr)
+                setTenantRequests(rs => rs.map(r => r.id === req.id ? { ...r, linked_repair_id: data[0].id, status: "acknowledged" } : r));
+        }
+    };
+    const requestStatusColor = (status) => ({ new: C.blue, acknowledged: C.accent, in_progress: C.orange, completed: C.green }[status] || C.muted);
+    const requestStatusLabel = (status) => ({ new: "New", acknowledged: "Acknowledged", in_progress: "In Progress", completed: "Completed" }[status] || status);
     const deleteProperty = async (p) => {
         if (!window.confirm(`Delete property "${p.address}"?\n\nThis does not automatically delete related repairs, damages, rent history, or inspections for this property — you may want to remove those first.`))
             return;
@@ -1086,6 +1483,25 @@ function App() {
         showErr(error);
         if (!error)
             setRepairs(rs => rs.filter(x => x.id !== r.id));
+    };
+    const uploadRepairReceipt = async (repair, file) => {
+        if (!file)
+            return;
+        if (file.size === 0) {
+            alert("That file didn't upload properly (it came back empty). Please try again.");
+            return;
+        }
+        const fileName = `${userId()}/receipts/${Date.now()}_${file.name}`;
+        const { error: upErr } = await withRetry(() => sb.storage.from("landlord-photos").upload(fileName, file, { contentType: file.type || undefined }));
+        if (upErr) {
+            alert("Couldn't upload the receipt right now. Please check your connection and try again.");
+            return;
+        }
+        const { data: urlData } = sb.storage.from("landlord-photos").getPublicUrl(fileName);
+        const { error } = await sb.from("repairs").update({ receipt_url: urlData.publicUrl }).eq("id", repair.id);
+        showErr(error);
+        if (!error)
+            setRepairs(rs => rs.map(r => r.id === repair.id ? { ...r, receipt_url: urlData.publicUrl } : r));
     };
     const deleteRentRecord = async (r) => {
         if (!window.confirm("Delete this rent history record?"))
@@ -1279,8 +1695,6 @@ function App() {
         const d = new Date();
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     };
-    // Builds a running month-by-month ledger for a property's rent payments, carrying any
-    // overpayment forward as credit toward the following month's balance due.
     const rentLedgerForProperty = (propertyId) => {
         const prop = properties.find(pr => pr.id === propertyId);
         if (!prop)
@@ -1381,7 +1795,7 @@ function App() {
         return React.createElement(AuthScreen, null);
     }
     const isOwner = session.user.email === "aandggeneralbuilders@yahoo.com";
-    const TABS = ["Dashboard", "Properties", "Repairs", "Rent History", "Damage Log", "Inspections", "Contractors", "Notices", "Contracts", "Payments", "Property Tax", "Forms", "Resources", "My Profile"];
+    const TABS = ["Dashboard", "Help", "Properties", "Repairs", "Tenant Requests", "Rent History", "Damage Log", "Inspections", "Contractors", "Notices", "Contracts", "Payments", "Lawn Care", "Utilities", "Property Tax", "Forms", "Resources", "My Profile"];
     return (React.createElement("div", { style: { display: "flex", minHeight: "100vh" } },
         React.createElement("div", { className: "no-print", style: { width: 200, background: C.navy, padding: 20, color: "#fff", flexShrink: 0, display: "flex", flexDirection: "column" } },
             React.createElement("h2", { style: { fontSize: 18, marginBottom: 20 } }, "LandlordHub"),
@@ -1390,7 +1804,7 @@ function App() {
             React.createElement("div", { style: { fontSize: 12, color: "#8fa0c0", marginBottom: 8, wordBreak: "break-all" } }, session.user.email),
             React.createElement("button", { style: { ...btnS, color: "#fff", borderColor: "#3a4a6b", fontSize: 13, padding: "6px 12px" }, onClick: logout }, "Log Out")),
         React.createElement("div", { style: { flex: 1, padding: 24 } },
-            React.createElement("div", { className: "no-print", style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 } },
+            React.createElement("div", { className: "no-print", style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 } },
                 React.createElement("h1", { style: { color: C.navy } }, tab),
                 tab === "Properties" && !viewProperty && React.createElement("button", { style: btnP, onClick: () => openModal("property") }, "+ Add Property"),
                 tab === "Repairs" && React.createElement("button", { style: btnP, onClick: () => openModal("repair") }, "+ Log Repair"),
@@ -1399,14 +1813,46 @@ function App() {
                 tab === "Contractors" && React.createElement("button", { style: btnP, onClick: () => openModal("contractor") }, "+ Add Contractor"),
                 tab === "Inspections" && !viewInspection && React.createElement("button", { style: btnP, onClick: () => openModal("inspection") }, "+ New Inspection"),
                 tab === "Notices" && React.createElement("button", { style: btnP, onClick: () => openModal("notice") }, "+ Upload Notice"),
+                tab === "Tenant Requests" && React.createElement("button", { style: btnP, onClick: () => openModal("inviteTenant") }, "+ Invite Tenant"),
                 tab === "Contracts" && React.createElement("button", { style: btnP, onClick: () => openModal("contract") }, "+ Upload Contract"),
                 tab === "Payments" && React.createElement("button", { style: btnP, onClick: () => openModal("payment") }, "+ Log Payment"),
+                tab === "Lawn Care" && React.createElement("button", { style: btnP, onClick: () => openModal("lawnCare") }, "+ Add Lawn Care"),
+                tab === "Utilities" && React.createElement("button", { style: btnP, onClick: () => openModal("utility") }, "+ Log Utility Bill"),
                 tab === "Property Tax" && React.createElement("button", { style: btnP, onClick: () => openModal("propertyTax") }, "+ Upload Tax Document"),
                 tab === "Forms" && isOwner && React.createElement("button", { style: btnP, onClick: () => openModal("form") }, "+ Upload Form"),
                 tab === "Resources" && React.createElement("div", { style: { display: "flex", gap: 8 } },
-                    React.createElement("button", { style: btnP, onClick: () => openModal("resource") }, "+ Add Contact"),
+                    isOwner && React.createElement("button", { style: btnP, onClick: () => openModal("resource") }, "+ Add Contact"),
                     React.createElement("button", { style: btnP, onClick: () => openModal("resourceLink") }, "+ Add Link"))),
             loadingData && React.createElement("div", { style: { color: C.muted } }, "Loading your data..."),
+            !loadingData && tab === "Help" && React.createElement(HelpTab, null),
+            !loadingData && tab === "Tenant Requests" && React.createElement("div", null,
+                lastInviteCode && React.createElement("div", { style: { background: "#fff", padding: 16, borderRadius: 10, border: "2px solid " + C.accent, marginBottom: 20 } },
+                    React.createElement("div", { style: { fontWeight: 700, marginBottom: 6 } }, "Invite Created"),
+                    React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 10 } }, lastInviteCode.full_name),
+                    React.createElement("div", { style: { fontFamily: "monospace", fontSize: 20, fontWeight: 700, background: C.bg, padding: "8px 12px", borderRadius: 6, display: "inline-block", marginBottom: 10 } }, lastInviteCode.invite_code),
+                    React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                        React.createElement("button", { style: { ...btnS, padding: "6px 12px", fontSize: 12 }, onClick: () => emailTenantInvite(lastInviteCode) }, "Email Invite"),
+                        React.createElement("button", { style: { ...btnS, padding: "6px 12px", fontSize: 12 }, onClick: () => setLastInviteCode(null) }, "Dismiss"))),
+                React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8 } }, "Tenants"),
+                tenants.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 20 } }, "No tenants yet.") : tenants.map(t => React.createElement("div", { key: t.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8 } },
+                    React.createElement("div", { style: { fontWeight: 700 } }, t.full_name),
+                    React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, t.email || "No email", " — ", t.invite_status),
+                    t.invite_status === "pending" && React.createElement("div", { style: { fontFamily: "monospace", fontSize: 13, color: C.accent, marginTop: 4 } }, "Code: ", t.invite_code),
+                    t.invite_status === "pending" && React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12, marginTop: 8 }, onClick: () => emailTenantInvite(t) }, "Email Invite"))),
+                React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8, marginTop: 20 } }, "Repair Requests"),
+                tenantRequests.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, "No repair requests yet.") : tenantRequests.map(req => React.createElement("div", { key: req.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
+                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
+                        React.createElement("div", { style: { fontWeight: 700 } }, req.description),
+                        React.createElement("span", { style: { background: requestStatusColor(req.status), color: "#fff", borderRadius: 100, padding: "3px 10px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" } }, requestStatusLabel(req.status))),
+                    React.createElement("div", { style: { color: C.muted, fontSize: 12, marginTop: 6 } }, req.urgency, " priority"),
+                    req.photo_url && React.createElement("img", { src: req.photo_url, style: { maxWidth: 160, borderRadius: 6, marginTop: 8, display: "block" } }),
+                    req.linked_repair_id && React.createElement("div", { style: { color: C.green, fontSize: 12, marginTop: 8 } }, "\u2713 Tracked in Repairs"),
+                    React.createElement("div", { style: { marginTop: 10 } },
+                        React.createElement("input", { style: { ...inp, marginBottom: 6 }, placeholder: "Note to tenant (optional)", defaultValue: req.landlord_note || "", onBlur: e => { if (e.target.value !== (req.landlord_note || "")) saveRequestNote(req.id, e.target.value); } })),
+                    React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 } },
+                        !req.linked_repair_id && React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => pushRequestToRepairs(req) }, "Push to Repairs"),
+                        req.status !== "in_progress" && req.status !== "completed" && React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => updateRequestStatus(req.id, "in_progress") }, "Mark In Progress"),
+                        req.status !== "completed" && React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => updateRequestStatus(req.id, "completed") }, "Mark Completed"))))),
             !loadingData && tab === "Dashboard" && (React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 14 } },
                 React.createElement("div", { style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border } },
                     React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Monthly Rent"),
@@ -1483,10 +1929,13 @@ function App() {
                         p.rent,
                         "/mo ",
                         p.lease_end ? `— Lease ends ${p.lease_end}` : ""),
-                    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8 } },
+                    React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 4 } },
                         "Repairs (",
                         pRepairs.length,
                         ")"),
+                    pRepairs.length > 0 && React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 8 } },
+                        "Total spent on repairs: $",
+                        pRepairs.reduce((s, r) => s + Number(r.cost || 0), 0).toFixed(2)),
                     pRepairs.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 16 } }, "No repairs logged.") : pRepairs.map(r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8 } },
                         React.createElement("div", { style: { fontWeight: 700 } }, r.title),
                         React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
@@ -1497,7 +1946,11 @@ function App() {
                             r.status,
                             " \u2014 $",
                             r.cost),
-                        r.photo_url && React.createElement("img", { src: r.photo_url, style: { maxWidth: 120, borderRadius: 6, marginTop: 6, display: "block" } })))),
+                        r.photo_url && React.createElement("img", { src: r.photo_url, style: { maxWidth: 120, borderRadius: 6, marginTop: 6, display: "block" } }),
+                        React.createElement(React.Fragment, null,
+    r.receipt_url && (React.createElement("a", { href: r.receipt_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "4px 10px", fontSize: 12, textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 6 } }, "View Receipt")),
+    React.createElement("label", { htmlFor: "receipt-" + r.id, style: { ...btnS, padding: "4px 10px", fontSize: 12, display: "inline-block", marginTop: 6, cursor: "pointer" } }, r.receipt_url ? "Replace Receipt" : "+ Upload Receipt"),
+    React.createElement("input", { id: "receipt-" + r.id, type: "file", accept: "image/*,application/pdf", style: { display: "none" }, onChange: e => uploadRepairReceipt(r, e.target.files[0]) }))))),
                     React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8, marginTop: 16 } },
                         "Damage Log (",
                         pDamages.length,
@@ -1569,6 +2022,10 @@ function App() {
                     r.status),
                 r.contractor_id && React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 8 } }, "Contractor: " + contractorName(r.contractor_id)),
                 r.photo_url && React.createElement("img", { src: r.photo_url, style: { maxWidth: 150, borderRadius: 6, marginBottom: 8, display: "block" } }),
+                React.createElement(React.Fragment, null,
+    r.receipt_url && (React.createElement("a", { href: r.receipt_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "4px 10px", fontSize: 12, textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 6 } }, "View Receipt")),
+    React.createElement("label", { htmlFor: "receipt-" + r.id, style: { ...btnS, padding: "4px 10px", fontSize: 12, display: "inline-block", marginTop: 6, cursor: "pointer" } }, r.receipt_url ? "Replace Receipt" : "+ Upload Receipt"),
+    React.createElement("input", { id: "receipt-" + r.id, type: "file", accept: "image/*,application/pdf", style: { display: "none" }, onChange: e => uploadRepairReceipt(r, e.target.files[0]) })),
                 React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
                     r.status === "Open" && React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => updateRepairStatus(r.id, "In Progress") }, "Mark In Progress"),
                     r.status === "In Progress" && React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => updateRepairStatus(r.id, "Resolved") }, "Mark Resolved"),
@@ -1608,6 +2065,45 @@ function App() {
                     React.createElement("option", null, "Deducted from deposit"),
                     React.createElement("option", null, "Tenant paid"),
                     React.createElement("option", null, "Disputed")))))),
+            !loadingData && tab === "Lawn Care" && (React.createElement("div", null,
+                React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8 } }, "Recurring Lawn Care"),
+                lawnCare.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 20 } }, "No recurring lawn care set up yet.") : lawnCare.map(lc => (React.createElement("div", { key: lc.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10, opacity: lc.active ? 1 : 0.6 } },
+                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
+                        React.createElement("div", null,
+                            React.createElement("div", { style: { fontWeight: 700 } }, lc.company_name || "(No company name)"),
+                            React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, propName(lc.property_id))),
+                        React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                            React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditLawnCare(lc) }, "Edit"),
+                            lc.active ? React.createElement("button", { style: btnDangerSm, onClick: () => deactivateLawnCare(lc) }, "Stop") : React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => reactivateLawnCare(lc) }, "Restart"))),
+                    React.createElement("div", { style: { color: C.muted, marginTop: 8, fontSize: 13 } },
+                        "$", Number(lc.amount).toFixed(2), " on day ", lc.day_of_month, " of each month", !lc.active && " \u2014 inactive")))),
+                React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8, marginTop: 24 } }, "Payment History"),
+                lawnCarePayments.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, "No lawn care payments recorded yet.") : lawnCarePayments.map(pmt => (React.createElement("div", { key: pmt.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" } },
+                    React.createElement("div", null,
+                        React.createElement("div", { style: { fontWeight: 700 } }, "$", Number(pmt.amount).toFixed(2), " \u2014 ", propName(pmt.property_id)),
+                        React.createElement("div", { style: { color: C.muted, fontSize: 12 } }, new Date(pmt.paid_date + "T00:00:00").toLocaleDateString(), " \u2014 Paid")),
+                    React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+                        pmt.receipt_url ? React.createElement("a", { href: pmt.receipt_url, target: "_blank", rel: "noreferrer", style: { fontSize: 12, color: C.blue } }, "View Receipt") : React.createElement("label", { style: { ...btnS, padding: "5px 10px", fontSize: 12, cursor: "pointer" } },
+                            "Upload Receipt",
+                            React.createElement("input", { type: "file", accept: "image/*,application/pdf", style: { display: "none" }, onChange: e => uploadLawnCareReceipt(pmt, e.target.files[0]) }))))))
+            )),
+            !loadingData && tab === "Utilities" && (React.createElement("div", null,
+                utilities.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, "No utility bills logged yet.") : utilities.map(u => (React.createElement("div", { key: u.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
+                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
+                        React.createElement("div", null,
+                            React.createElement("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 } },
+                                React.createElement("span", { style: { background: C.navy, color: "#fff", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 100 } }, u.utility_type),
+                                React.createElement("span", { style: { background: u.responsibility === "landlord" ? C.green : C.muted, color: "#fff", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 100 } }, u.responsibility === "landlord" ? "Landlord Pays" : "Tenant Pays")),
+                            React.createElement("div", { style: { fontWeight: 700 } }, propName(u.property_id))),
+                        React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                            React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditUtility(u) }, "Edit"),
+                            React.createElement("button", { style: btnDangerSm, onClick: () => deleteUtility(u) }, "Delete"))),
+                    React.createElement("div", { style: { color: C.muted, marginTop: 8, fontSize: 13 } },
+                        u.amount != null ? `$${Number(u.amount).toFixed(2)} \u2014 ` : "",
+                        new Date(u.bill_date + "T00:00:00").toLocaleDateString()),
+                    u.notes && React.createElement("div", { style: { color: C.muted, fontSize: 13, marginTop: 4 } }, u.notes),
+                    u.file_url && React.createElement("a", { href: u.file_url, target: "_blank", rel: "noreferrer", style: { fontSize: 12, color: C.blue, marginTop: 8, display: "inline-block" } }, "View Bill"))))
+            )),
             !loadingData && tab === "Contractors" && (TRADES.map(trade => {
                 const list = contractorsForTrade(trade);
                 if (list.length === 0)
@@ -1655,10 +2151,24 @@ function App() {
                                 React.createElement("a", { href: ct.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View"),
                                 React.createElement("button", { style: btnDangerSm, onClick: () => deleteContract(ct) }, "Delete")))))));
                 })),
-            !loadingData && tab === "Property Tax" && (properties.length === 0 ? (React.createElement("div", { style: { color: C.muted } }, "Add a property first, then you can upload tax documents for it.")) : (properties.map(p => {
+            !loadingData && tab === "Property Tax" && (React.createElement("div", null,
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 20, flexWrap: "wrap" } },
+                    React.createElement("span", { style: { fontWeight: 700, color: C.navy, fontSize: 14 } }, "Year-End Statement for:"),
+                    React.createElement("select", { style: { ...inp, width: 120, marginBottom: 0 }, value: statementYear, onChange: e => setStatementYear(Number(e.target.value)) },
+                        Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i).map(y => React.createElement("option", { key: y, value: y }, y)))),
+                properties.length === 0 ? (React.createElement("div", { style: { color: C.muted } }, "Add a property first, then you can upload tax documents for it.")) : (properties.map(p => {
     const list = propertyTax.filter(t => t.property_id === p.id);
-    return (React.createElement("div", { key: p.id, style: { marginBottom: 16 } },
+    const stmt = getYearStatement(p.id, statementYear);
+    return (React.createElement("div", { key: p.id, style: { marginBottom: 28 } },
         React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8 } }, p.address),
+        React.createElement("div", { style: { background: "#fff", border: "1px solid " + C.border, borderRadius: 10, padding: 16, marginBottom: 12 } },
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, fontSize: 13, marginBottom: 10 } },
+                React.createElement("span", null, "Repairs: $", stmt.repairsTotal.toFixed(2)),
+                React.createElement("span", null, "Damage: $", stmt.damageTotal.toFixed(2)),
+                React.createElement("span", null, "Lawn Care: $", stmt.lawnTotal.toFixed(2)),
+                React.createElement("span", null, "Utilities: $", stmt.utilTotal.toFixed(2))),
+            React.createElement("div", { style: { fontWeight: 700, fontSize: 16, color: C.navy, borderTop: "1px solid " + C.border, paddingTop: 10, marginBottom: 12 } }, "Total for ", statementYear, ": $", stmt.grandTotal.toFixed(2)),
+            React.createElement("button", { style: { ...btnP, padding: "8px 14px", fontSize: 13 }, onClick: () => downloadYearStatement(p, statementYear) }, "Download PDF Statement")),
         list.length === 0 ? (React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 8 } }, "No tax documents uploaded yet.")) : (list.map(t => (React.createElement("div", { key: t.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
             React.createElement("div", null,
                 React.createElement("div", { style: { fontWeight: 700 } }, t.title),
@@ -1666,7 +2176,7 @@ function App() {
             React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
                 React.createElement("a", { href: t.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View"),
                 React.createElement("button", { style: btnDangerSm, onClick: () => deletePropertyTax(t) }, "Delete"))))))));
-}))),
+})))),
             !loadingData && tab === "Forms" && (forms.length === 0 ? (React.createElement("div", { style: { color: C.muted } }, "No forms uploaded yet. Upload templates like lease agreements, 3-day notices, or rent increase letters so they're always on hand to print.")) : (forms.map(fm => (React.createElement("div", { key: fm.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
     React.createElement("div", null,
         React.createElement("div", { style: { fontWeight: 700 } }, fm.title),
@@ -1689,7 +2199,7 @@ function App() {
                         r.phone,
                         r.email ? " — " + r.email : ""),
                     r.notes && React.createElement("div", { style: { color: C.muted, fontSize: 12, marginTop: 4 } }, r.notes)),
-                React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                isOwner && React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
                     React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditResource(r) }, "Edit"),
                     React.createElement("button", { style: btnDangerSm, onClick: () => deleteResource(r) }, "Delete")))))));
     })),
@@ -2057,6 +2567,10 @@ function App() {
                 React.createElement("option", null, "Low")),
             React.createElement("input", { style: inp, type: "number", placeholder: "Cost", value: form.cost || "", onChange: e => setF("cost", e.target.value) }),
             React.createElement("input", { style: inp, placeholder: "Notes", value: form.notes || "", onChange: e => setF("notes", e.target.value) }),
+            form.existingPhotoUrl && !form.photoFile && React.createElement("div", { style: { marginBottom: 10 } },
+                React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 4 } }, "Current photo:"),
+                React.createElement("img", { src: form.existingPhotoUrl, style: { maxWidth: 160, display: "block", borderRadius: 6 } })),
+            React.createElement(PhotoPicker, { idPrefix: "edit-repair-photo", label: form.existingPhotoUrl ? "Replace Photo" : "Photo", file: form.photoFile, resetKey: resetKey, onSelect: e => handlePhotoSelect(e, "photoFile") }),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: updateRepair }, "Save Changes"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
@@ -2096,6 +2610,76 @@ function App() {
             React.createElement("input", { style: inp, type: "number", placeholder: "Estimated Cost", value: form.estimatedCost || "", onChange: e => setF("estimatedCost", e.target.value) }),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: updateDamage }, "Save Changes"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "lawnCare" && (React.createElement(Modal, { title: "Add Recurring Lawn Care", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select property\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("input", { style: inp, placeholder: "Company Name", value: form.companyName || "", onChange: e => setF("companyName", e.target.value) }),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Amount", value: form.amount || "", onChange: e => setF("amount", e.target.value) }),
+            React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 4 } }, "Day of month it's due (1\u201328)"),
+            React.createElement("input", { style: inp, type: "number", min: 1, max: 28, placeholder: "Day of month (1-28)", value: form.dayOfMonth || "", onChange: e => setF("dayOfMonth", e.target.value) }),
+            React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 4 } }, "Start date"),
+            React.createElement("input", { style: inp, type: "date", value: form.startDate || new Date().toISOString().slice(0, 10), onChange: e => setF("startDate", e.target.value) }),
+            React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 10 } }, "This will be marked paid automatically each month once the due day passes."),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: addLawnCare }, "Save"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "editLawnCare" && (React.createElement(Modal, { title: "Edit Lawn Care", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select property\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("input", { style: inp, placeholder: "Company Name", value: form.companyName || "", onChange: e => setF("companyName", e.target.value) }),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Amount", value: form.amount || "", onChange: e => setF("amount", e.target.value) }),
+            React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 4 } }, "Day of month it's due (1\u201328)"),
+            React.createElement("input", { style: inp, type: "number", min: 1, max: 28, placeholder: "Day of month (1-28)", value: form.dayOfMonth || "", onChange: e => setF("dayOfMonth", e.target.value) }),
+            React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 10 } }, "Changing the amount only affects future months \u2014 past payments already on record stay as they were."),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: updateLawnCare }, "Save Changes"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "utility" && (React.createElement(Modal, { title: "Log Utility Bill", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select property\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("select", { style: inp, value: form.utilityType || "Water", onChange: e => setF("utilityType", e.target.value) },
+                React.createElement("option", null, "Water"),
+                React.createElement("option", null, "Gas"),
+                React.createElement("option", null, "Electric"),
+                React.createElement("option", null, "Trash"),
+                React.createElement("option", null, "Sewer"),
+                React.createElement("option", null, "Other")),
+            React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 4 } }, "Who pays this bill?"),
+            React.createElement("select", { style: inp, value: form.responsibility || "tenant", onChange: e => setF("responsibility", e.target.value) },
+                React.createElement("option", { value: "tenant" }, "Tenant Pays"),
+                React.createElement("option", { value: "landlord" }, "Landlord Pays")),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Amount (optional)", value: form.amount || "", onChange: e => setF("amount", e.target.value) }),
+            React.createElement("input", { style: inp, type: "date", value: form.billDate || new Date().toISOString().slice(0, 10), onChange: e => setF("billDate", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Notes (optional)", value: form.notes || "", onChange: e => setF("notes", e.target.value) }),
+            React.createElement("input", { style: inp, type: "file", accept: "image/*,application/pdf", onChange: e => setF("utilityFile", e.target.files[0]) }),
+            React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 10 } }, "Only \"Landlord Pays\" bills count toward your deductible expenses on the Year-End Statement."),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: addUtility }, "Save"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "editUtility" && (React.createElement(Modal, { title: "Edit Utility Bill", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select property\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("select", { style: inp, value: form.utilityType || "Water", onChange: e => setF("utilityType", e.target.value) },
+                React.createElement("option", null, "Water"),
+                React.createElement("option", null, "Gas"),
+                React.createElement("option", null, "Electric"),
+                React.createElement("option", null, "Trash"),
+                React.createElement("option", null, "Sewer"),
+                React.createElement("option", null, "Other")),
+            React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 4 } }, "Who pays this bill?"),
+            React.createElement("select", { style: inp, value: form.responsibility || "tenant", onChange: e => setF("responsibility", e.target.value) },
+                React.createElement("option", { value: "tenant" }, "Tenant Pays"),
+                React.createElement("option", { value: "landlord" }, "Landlord Pays")),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Amount (optional)", value: form.amount || "", onChange: e => setF("amount", e.target.value) }),
+            React.createElement("input", { style: inp, type: "date", value: form.billDate || "", onChange: e => setF("billDate", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Notes (optional)", value: form.notes || "", onChange: e => setF("notes", e.target.value) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: updateUtility }, "Save Changes"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "contractor" && (React.createElement(Modal, { title: "Add Contractor", onClose: closeModal },
             React.createElement("input", { style: inp, placeholder: "Name", value: form.name || "", onChange: e => setF("name", e.target.value) }),
@@ -2244,6 +2828,20 @@ function App() {
     React.createElement("input", { style: inp, placeholder: "Notes (optional)", value: form.linkNotes || "", onChange: e => setF("linkNotes", e.target.value) }),
     React.createElement("div", { style: { display: "flex", gap: 10 } },
         React.createElement("button", { style: btnP, onClick: addResourceLink }, "Add"),
+        React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "inviteTenant" && (React.createElement(Modal, { title: "Invite Tenant", onClose: closeModal },
+    React.createElement("select", { style: inp, value: form.tenantPropertyId || "", onChange: e => {
+        const propId = e.target.value;
+        const prop = properties.find(p => String(p.id) === propId);
+        setForm(f => ({ ...f, tenantPropertyId: propId, tenantFullName: prop ? (prop.tenant || "") : (f.tenantFullName || ""), tenantInviteEmail: prop ? (prop.tenant_email || "") : (f.tenantInviteEmail || ""), tenantInvitePhone: prop ? (prop.tenant_phone || "") : (f.tenantInvitePhone || "") }));
+    } },
+        React.createElement("option", { value: "" }, "Select property\u2026"),
+        properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+    React.createElement("input", { style: inp, placeholder: "Tenant Full Name", value: form.tenantFullName || "", onChange: e => setF("tenantFullName", e.target.value) }),
+    React.createElement("input", { style: inp, type: "email", placeholder: "Tenant Email (optional)", value: form.tenantInviteEmail || "", onChange: e => setF("tenantInviteEmail", e.target.value) }),
+    React.createElement("input", { style: inp, placeholder: "Tenant Phone (optional)", value: form.tenantInvitePhone || "", onChange: e => setF("tenantInvitePhone", e.target.value) }),
+    React.createElement("div", { style: { display: "flex", gap: 10 } },
+        React.createElement("button", { style: btnP, onClick: addTenantInvite }, "Create Invite"),
         React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel"))))));
 }
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
