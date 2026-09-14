@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>LandlordHub - Property Manager</title>
+<title>Construction Manager</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -198,7 +198,7 @@ function buildYearStatementPdf(p, year, stmt) {
         doc.setFont(undefined, "normal");
         y += 26;
     };
-    section("Repairs", stmt.pRepairs, r => `${r.created_at ? new Date(r.created_at).toLocaleDateString() : ""} \u2014 ${r.trade || "Repair"} \u2014 $${Number(r.cost || 0).toFixed(2)}`, stmt.repairsTotal);
+    section("Punch List", stmt.pRepairs, r => `${r.created_at ? new Date(r.created_at).toLocaleDateString() : ""} \u2014 ${r.trade || "Repair"} \u2014 $${Number(r.cost || 0).toFixed(2)}`, stmt.repairsTotal);
     section("Tenant Damage", stmt.pDamages, d => `${d.created_at ? new Date(d.created_at).toLocaleDateString() : ""} \u2014 ${d.description || d.severity || "Damage"} \u2014 $${Number(d.estimated_cost || 0).toFixed(2)}`, stmt.damageTotal);
     section("Lawn Care", stmt.pLawn, l => `${new Date(l.paid_date + "T00:00:00").toLocaleDateString()} \u2014 $${Number(l.amount || 0).toFixed(2)}`, stmt.lawnTotal);
     section("Utilities (Landlord-Paid)", stmt.pUtils, u => `${new Date(u.bill_date + "T00:00:00").toLocaleDateString()} \u2014 ${u.utility_type} \u2014 $${Number(u.amount || 0).toFixed(2)}`, stmt.utilTotal);
@@ -213,7 +213,7 @@ function buildYearStatementPdf(p, year, stmt) {
     doc.setFont(undefined, "normal");
     doc.setFontSize(9);
     doc.setTextColor(107, 122, 153);
-    const disclaimer = doc.splitTextToSize("This statement organizes figures recorded in LandlordHub. It is not tax advice and does not replace your accountant or tax preparer.", maxWidth);
+    const disclaimer = doc.splitTextToSize("This statement organizes figures recorded in Construction Manager. It is not tax advice and does not replace your accountant or tax preparer.", maxWidth);
     doc.text(disclaimer, marginX, y);
     return doc.output("blob");
 }
@@ -523,7 +523,7 @@ function AuthScreen() {
     };
     return (React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: C.bg } },
         React.createElement("div", { style: { background: "#fff", padding: 32, borderRadius: 12, width: 360, maxWidth: "90vw", boxShadow: "0 4px 20px #0001" } },
-            React.createElement("h2", { style: { color: C.navy, marginBottom: 4 } }, "LandlordHub"),
+            React.createElement("h2", { style: { color: C.navy, marginBottom: 4 } }, "Construction Manager"),
             React.createElement("div", { style: { color: C.muted, marginBottom: 20, fontSize: 14 } }, mode === "login" ? "Log in to your account" : mode === "signup" ? "Create a new account" : "Reset your password"),
             React.createElement("input", { style: inp, type: "email", placeholder: "Email", value: email, onChange: e => setEmail(e.target.value) }),
             mode !== "reset" && React.createElement("input", { style: inp, type: "password", placeholder: "Password", value: password, onChange: e => setPassword(e.target.value) }),
@@ -546,7 +546,7 @@ function HelpTab() {
         { key: "dashboard", tag: "Overview", color: C.navy, title: "Dashboard", body: [
             "Your at-a-glance summary: monthly rent, open repairs, and quick stats across every property you manage."
         ]},
-        { key: "properties", tag: "Setup", color: C.navy, title: "Properties", body: [
+        { key: "properties", tag: "Setup", color: C.navy, title: "Job Sites", body: [
             "Add a property with its address and details first — repairs, tenants, inspections, and documents all attach to a property record.",
             "Tap + Add Property from this tab to get started."
         ]},
@@ -556,7 +556,7 @@ function HelpTab() {
             "Once active, tenants can submit repair requests with photos any time. Requests land here for you to review.",
             "Tap Push to Repairs to turn a tenant's request into a tracked repair job with cost and priority."
         ]},
-        { key: "repairs", tag: "Maintenance", color: C.blue, title: "Repairs", body: [
+        { key: "repairs", tag: "Maintenance", color: C.blue, title: "Punch List", body: [
             "Log any repair job — trade, priority, cost, and notes — whether it came from a tenant request or you started it yourself.",
             "Assign a contractor and update status as work progresses. Costs here total automatically per property."
         ]},
@@ -571,7 +571,7 @@ function HelpTab() {
             "Document a property's condition at a specific moment — new acquisition, move-in, move-out, or routine.",
             "A move-in record is your baseline; comparing it to the move-out record shows what's normal wear versus tenant damage."
         ]},
-        { key: "contractors", tag: "Contacts", color: C.navy, title: "Contractors", body: [
+        { key: "contractors", tag: "Contacts", color: C.navy, title: "Subcontractors", body: [
             "Keep your go-to contractors on file so you can assign them to repair jobs without hunting for a phone number."
         ]},
         { key: "notices", tag: "Documents", color: C.navy, title: "Notices", body: [
@@ -595,7 +595,7 @@ function HelpTab() {
         { key: "property-tax", tag: "Tax", color: C.green, title: "Property Tax", body: [
             "This is where everything comes together. Check the Repairs tab for a property's total repair cost for the year, Damage Log for tenant-caused damage, and Lawn Care and Utilities for recurring and per-bill expenses.",
             "Upload supporting tax documents here per property — prior returns, 1098s, anything your accountant needs.",
-            "LandlordHub organizes and totals your figures; it doesn't file taxes or replace your accountant."
+            "Construction Manager organizes and totals your figures; it doesn't file taxes or replace your accountant."
         ]},
         { key: "forms", tag: "Templates", color: C.navy, title: "Forms", body: [
             "A library of blank templates you reuse across properties."
@@ -649,6 +649,8 @@ function App() {
     const [lawnCarePayments, setLawnCarePayments] = useState([]);
     const [statementYear, setStatementYear] = useState(new Date().getFullYear());
     const [utilities, setUtilities] = useState([]);
+    const [jobCosts, setJobCosts] = useState([]);
+    const [materials, setMaterials] = useState([]);
     const [modal, setModal] = useState(() => { try {
         return sessionStorage.getItem("pt_modal") || null;
     }
@@ -791,7 +793,7 @@ function App() {
     }, [session]);
     const loadAllData = async () => {
         setLoadingData(true);
-        const [p, r, rh, d, c, ins, nt, ct, pm, pt, fm, res, rl, pr, tn, rq, lc, lcp, ut] = await Promise.all([
+        const [p, r, rh, d, c, ins, nt, ct, pm, pt, fm, res, rl, pr, tn, rq, lc, lcp, ut, jc, mt] = await Promise.all([
             sb.from("properties").select("*").order("id"),
             sb.from("repairs").select("*").order("id"),
             sb.from("rent_history").select("*").order("id"),
@@ -811,6 +813,8 @@ function App() {
             sb.from("lawn_care").select("*").order("id"),
             sb.from("lawn_care_payments").select("*").order("paid_date", { ascending: false }),
             sb.from("utilities").select("*").order("bill_date", { ascending: false }),
+            sb.from("job_costs").select("*").order("cost_date", { ascending: false }),
+            sb.from("materials").select("*").order("purchase_date", { ascending: false }),
         ]);
         if (p.data)
             setProperties(p.data);
@@ -850,6 +854,10 @@ function App() {
             setLawnCarePayments(lcp.data);
         if (ut.data)
             setUtilities(ut.data);
+        if (jc.data)
+            setJobCosts(jc.data);
+        if (mt.data)
+            setMaterials(mt.data);
         if (lc.data && lcp.data)
             await ensureLawnCarePayments(lc.data, lcp.data);
         setLoadingData(false);
@@ -1020,6 +1028,40 @@ function App() {
             setDamages(ds => ds.map(d => d.id === form.damageId ? { ...d, property_id: Number(form.propertyId), description: form.description, severity: form.severity || "Minor", estimated_cost: Number(form.estimatedCost) || 0 } : d));
             closeModal();
         }
+    };
+    const addJobCost = async () => {
+        if (!form.jcPropertyId || !form.jcAmount)
+            return;
+        const { data, error } = await withRetry(() => sb.from("job_costs").insert({ user_id: userId(), property_id: Number(form.jcPropertyId), category: form.jcCategory || "Other", description: form.jcDescription || "", amount: Number(form.jcAmount) || 0, cost_date: form.jcDate || new Date().toISOString().slice(0, 10) }).select());
+        showErr(error);
+        if (data)
+            setJobCosts(j => [...data, ...j]);
+        closeModal();
+    };
+    const deleteJobCost = async (jc) => {
+        if (!window.confirm("Delete this cost entry?"))
+            return;
+        const { error } = await sb.from("job_costs").delete().eq("id", jc.id);
+        showErr(error);
+        if (!error)
+            setJobCosts(j => j.filter(x => x.id !== jc.id));
+    };
+    const addMaterial = async () => {
+        if (!form.matPropertyId || !form.matItemName)
+            return;
+        const { data, error } = await withRetry(() => sb.from("materials").insert({ user_id: userId(), property_id: Number(form.matPropertyId), item_name: form.matItemName, quantity: Number(form.matQuantity) || 1, unit: form.matUnit || "", cost_per_unit: Number(form.matCostPerUnit) || 0, supplier: form.matSupplier || "", purchase_date: form.matDate || new Date().toISOString().slice(0, 10), notes: form.matNotes || "" }).select());
+        showErr(error);
+        if (data)
+            setMaterials(m => [...data, ...m]);
+        closeModal();
+    };
+    const deleteMaterial = async (mat) => {
+        if (!window.confirm("Delete this material entry?"))
+            return;
+        const { error } = await sb.from("materials").delete().eq("id", mat.id);
+        showErr(error);
+        if (!error)
+            setMaterials(m => m.filter(x => x.id !== mat.id));
     };
     const addLawnCare = async () => {
         if (!form.propertyId || !form.amount || !form.dayOfMonth)
@@ -1423,7 +1465,7 @@ function App() {
         closeModal();
     };
     const emailTenantInvite = (t) => {
-        const subject = encodeURIComponent("Your LandlordHub Maintenance Portal Access");
+        const subject = encodeURIComponent("Your Construction Manager Maintenance Portal Access");
         const body = encodeURIComponent(`Hi ${t.full_name},\n\nYou can now submit and track repair requests online.\n\n1. Go to: https://landlord-hub-three.vercel.app/tenant.html\n2. Tap "Activate Invite"\n3. Invite Code: ${t.invite_code}\n4. Use this email address: ${t.email || "(the email you'd like to use)"}\n5. Create a password\n\nOnce activated, you can submit maintenance requests with photos any time.`);
         openMailto(`mailto:${t.email || ""}?subject=${subject}&body=${body}`);
     };
@@ -1795,10 +1837,10 @@ function App() {
         return React.createElement(AuthScreen, null);
     }
     const isOwner = session.user.email === "aandggeneralbuilders@yahoo.com";
-    const TABS = ["Dashboard", "Help", "Properties", "Repairs", "Tenant Requests", "Rent History", "Damage Log", "Inspections", "Contractors", "Notices", "Contracts", "Payments", "Lawn Care", "Utilities", "Property Tax", "Forms", "Resources", "My Profile"];
+    const TABS = ["Dashboard", "Help", "Job Sites", "Punch List", "Client Requests", "Inspections", "Subcontractors", "Notices", "Contracts", "Payments", "Budget", "Materials", "Forms", "Resources", "My Profile"];
     return (React.createElement("div", { style: { display: "flex", minHeight: "100vh" } },
         React.createElement("div", { className: "no-print", style: { width: 200, background: C.navy, padding: 20, color: "#fff", flexShrink: 0, display: "flex", flexDirection: "column" } },
-            React.createElement("h2", { style: { fontSize: 18, marginBottom: 20 } }, "LandlordHub"),
+            React.createElement("h2", { style: { fontSize: 18, marginBottom: 20 } }, "Construction Manager"),
             TABS.map(t => (React.createElement("div", { key: t, onClick: () => { setTab(t); setViewInspection(null); setViewProperty(null); setShowReceipts(false); }, style: { padding: "10px 0", cursor: "pointer", color: tab === t ? C.accent : "#fff", fontSize: 14 } }, t))),
             React.createElement("div", { style: { flex: 1 } }),
             React.createElement("div", { style: { fontSize: 12, color: "#8fa0c0", marginBottom: 8, wordBreak: "break-all" } }, session.user.email),
@@ -1806,14 +1848,16 @@ function App() {
         React.createElement("div", { style: { flex: 1, padding: 24 } },
             React.createElement("div", { className: "no-print", style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 } },
                 React.createElement("h1", { style: { color: C.navy } }, tab),
-                tab === "Properties" && !viewProperty && React.createElement("button", { style: btnP, onClick: () => openModal("property") }, "+ Add Property"),
-                tab === "Repairs" && React.createElement("button", { style: btnP, onClick: () => openModal("repair") }, "+ Log Repair"),
+                tab === "Job Sites" && !viewProperty && React.createElement("button", { style: btnP, onClick: () => openModal("property") }, "+ Add Property"),
+                tab === "Punch List" && React.createElement("button", { style: btnP, onClick: () => openModal("repair") }, "+ Log Task"),
                 tab === "Rent History" && React.createElement("button", { style: btnP, onClick: () => openModal("rent") }, "+ Rent Increase"),
                 tab === "Damage Log" && React.createElement("button", { style: btnP, onClick: () => openModal("damage") }, "+ Log Damage"),
-                tab === "Contractors" && React.createElement("button", { style: btnP, onClick: () => openModal("contractor") }, "+ Add Contractor"),
+                tab === "Subcontractors" && React.createElement("button", { style: btnP, onClick: () => openModal("contractor") }, "+ Add Contractor"),
+                tab === "Budget" && React.createElement("button", { style: btnP, onClick: () => openModal("jobCost") }, "+ Add Cost"),
+                tab === "Materials" && React.createElement("button", { style: btnP, onClick: () => openModal("material") }, "+ Add Material"),
                 tab === "Inspections" && !viewInspection && React.createElement("button", { style: btnP, onClick: () => openModal("inspection") }, "+ New Inspection"),
                 tab === "Notices" && React.createElement("button", { style: btnP, onClick: () => openModal("notice") }, "+ Upload Notice"),
-                tab === "Tenant Requests" && React.createElement("button", { style: btnP, onClick: () => openModal("inviteTenant") }, "+ Invite Tenant"),
+                tab === "Client Requests" && React.createElement("button", { style: btnP, onClick: () => openModal("inviteTenant") }, "+ Invite Tenant"),
                 tab === "Contracts" && React.createElement("button", { style: btnP, onClick: () => openModal("contract") }, "+ Upload Contract"),
                 tab === "Payments" && React.createElement("button", { style: btnP, onClick: () => openModal("payment") }, "+ Log Payment"),
                 tab === "Lawn Care" && React.createElement("button", { style: btnP, onClick: () => openModal("lawnCare") }, "+ Add Lawn Care"),
@@ -1825,7 +1869,7 @@ function App() {
                     React.createElement("button", { style: btnP, onClick: () => openModal("resourceLink") }, "+ Add Link"))),
             loadingData && React.createElement("div", { style: { color: C.muted } }, "Loading your data..."),
             !loadingData && tab === "Help" && React.createElement(HelpTab, null),
-            !loadingData && tab === "Tenant Requests" && React.createElement("div", null,
+            !loadingData && tab === "Client Requests" && React.createElement("div", null,
                 lastInviteCode && React.createElement("div", { style: { background: "#fff", padding: 16, borderRadius: 10, border: "2px solid " + C.accent, marginBottom: 20 } },
                     React.createElement("div", { style: { fontWeight: 700, marginBottom: 6 } }, "Invite Created"),
                     React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 10 } }, lastInviteCode.full_name),
@@ -1863,12 +1907,12 @@ function App() {
                     React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Open Repairs"),
                     React.createElement("div", { style: { fontSize: 24, fontWeight: 700, color: C.red } }, openRepairs)),
                 React.createElement("div", { style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border } },
-                    React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Contractors"),
+                    React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Subcontractors"),
                     React.createElement("div", { style: { fontSize: 24, fontWeight: 700, color: C.blue } }, contractors.length)),
                 React.createElement("div", { style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border } },
                     React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Inspections"),
                     React.createElement("div", { style: { fontSize: 24, fontWeight: 700, color: C.orange } }, inspections.length)))),
-            !loadingData && tab === "Properties" && !viewProperty && (properties.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No properties yet. Add your first one!") : properties.map(p => (React.createElement("div", { key: p.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
+            !loadingData && tab === "Job Sites" && !viewProperty && (properties.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No properties yet. Add your first one!") : properties.map(p => (React.createElement("div", { key: p.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
                 React.createElement("div", { onClick: () => setViewProperty(p.id), style: { cursor: "pointer", flex: 1 } },
                     React.createElement("div", { style: { fontWeight: 700 } }, p.address),
                     React.createElement("div", { style: { color: C.muted } },
@@ -1881,7 +1925,7 @@ function App() {
                 React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
                     React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditProperty(p) }, "Edit"),
                     React.createElement("button", { style: btnDangerSm, onClick: () => deleteProperty(p) }, "Delete")))))),
-            !loadingData && tab === "Properties" && viewProperty && (() => {
+            !loadingData && tab === "Job Sites" && viewProperty && (() => {
                 const p = properties.find(pr => pr.id === viewProperty);
                 if (!p)
                     return null;
@@ -2010,7 +2054,7 @@ function App() {
                             React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, ct.created_at ? new Date(ct.created_at).toLocaleDateString() : "")),
                         React.createElement("a", { href: ct.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View")))))));
             })(),
-            !loadingData && tab === "Repairs" && (repairs.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No repairs logged yet.") : repairs.map(r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
+            !loadingData && tab === "Punch List" && (repairs.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No repairs logged yet.") : repairs.map(r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
                 React.createElement("div", { style: { fontWeight: 700 } }, r.title),
                 React.createElement("div", { style: { color: C.muted, marginBottom: 8 } },
                     propName(r.property_id),
@@ -2104,7 +2148,7 @@ function App() {
                     u.notes && React.createElement("div", { style: { color: C.muted, fontSize: 13, marginTop: 4 } }, u.notes),
                     u.file_url && React.createElement("a", { href: u.file_url, target: "_blank", rel: "noreferrer", style: { fontSize: 12, color: C.blue, marginTop: 8, display: "inline-block" } }, "View Bill"))))
             )),
-            !loadingData && tab === "Contractors" && (TRADES.map(trade => {
+            !loadingData && tab === "Subcontractors" && (TRADES.map(trade => {
                 const list = contractorsForTrade(trade);
                 if (list.length === 0)
                     return null;
@@ -2122,7 +2166,42 @@ function App() {
                             React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => openEditContractor(c) }, "Edit"),
                             React.createElement("button", { style: btnDangerSm, onClick: () => deleteContractor(c) }, "Delete")))))));
             })),
-            !loadingData && tab === "Contractors" && contractors.length === 0 && React.createElement("div", { style: { color: C.muted } }, "No contractors added yet."),
+            !loadingData && tab === "Subcontractors" && contractors.length === 0 && React.createElement("div", { style: { color: C.muted } }, "No contractors added yet."),
+            !loadingData && tab === "Budget" && (properties.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "Add a job site first, then you can track costs against it.") :
+                properties.map(p => {
+                    const list = jobCosts.filter(j => j.property_id === p.id);
+                    if (list.length === 0)
+                        return null;
+                    const total = list.reduce((sum, j) => sum + (Number(j.amount) || 0), 0);
+                    return (React.createElement("div", { key: p.id, style: { marginBottom: 20 } },
+                        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 } },
+                            React.createElement("h3", { style: { color: C.navy, fontSize: 15 } }, propName(p.id)),
+                            React.createElement("div", { style: { fontWeight: 700, color: C.navy } }, "Total: $" + total.toFixed(2))),
+                        list.map(j => (React.createElement("div", { key: j.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
+                            React.createElement("div", null,
+                                React.createElement("div", { style: { fontWeight: 700 } }, j.category, j.description ? " — " + j.description : ""),
+                                React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, "$" + Number(j.amount).toFixed(2) + " — " + j.cost_date)),
+                            React.createElement("button", { style: btnDangerSm, onClick: () => deleteJobCost(j) }, "Delete"))))));
+                })),
+            !loadingData && tab === "Budget" && jobCosts.length === 0 && React.createElement("div", { style: { color: C.muted } }, "No costs logged yet."),
+            !loadingData && tab === "Materials" && (properties.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "Add a job site first, then you can track materials against it.") :
+                properties.map(p => {
+                    const list = materials.filter(m => m.property_id === p.id);
+                    if (list.length === 0)
+                        return null;
+                    const total = list.reduce((sum, m) => sum + (Number(m.quantity) || 0) * (Number(m.cost_per_unit) || 0), 0);
+                    return (React.createElement("div", { key: p.id, style: { marginBottom: 20 } },
+                        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 } },
+                            React.createElement("h3", { style: { color: C.navy, fontSize: 15 } }, propName(p.id)),
+                            React.createElement("div", { style: { fontWeight: 700, color: C.navy } }, "Total: $" + total.toFixed(2))),
+                        list.map(m => (React.createElement("div", { key: m.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
+                            React.createElement("div", null,
+                                React.createElement("div", { style: { fontWeight: 700 } }, m.item_name),
+                                React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, m.quantity, " ", m.unit, " \u00d7 $", Number(m.cost_per_unit).toFixed(2), m.supplier ? " — " + m.supplier : "", " — ", m.purchase_date),
+                                m.notes && React.createElement("div", { style: { color: C.muted, fontSize: 12, marginTop: 4 } }, m.notes)),
+                            React.createElement("button", { style: btnDangerSm, onClick: () => deleteMaterial(m) }, "Delete"))))));
+                })),
+            !loadingData && tab === "Materials" && materials.length === 0 && React.createElement("div", { style: { color: C.muted } }, "No materials logged yet."),
             !loadingData && tab === "Notices" && (properties.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "Add a property first, then you can upload notices to it.") :
                 properties.map(p => {
                     const list = notices.filter(n => n.property_id === p.id);
@@ -2503,29 +2582,29 @@ function App() {
             entry.carryOut.toFixed(2)),
         profile && profile.signature_url && React.createElement("img", { src: profile.signature_url, style: { maxWidth: 140, marginTop: 30, display: "block" } }),
         profile && profile.full_name && React.createElement("p", { style: { marginTop: 4 } }, profile.full_name)))))),
-        modal === "property" && (React.createElement(Modal, { title: "Add Property", onClose: closeModal },
-            React.createElement("input", { style: inp, placeholder: "Address", value: form.address || "", onChange: e => setF("address", e.target.value) }),
-            React.createElement("input", { style: inp, placeholder: "Tenant Name", value: form.tenant || "", onChange: e => setF("tenant", e.target.value) }),
-            React.createElement("input", { style: inp, type: "number", placeholder: "Monthly Rent", value: form.rent || "", onChange: e => setF("rent", e.target.value) }),
+        modal === "property" && (React.createElement(Modal, { title: "Add Job Site", onClose: closeModal },
+            React.createElement("input", { style: inp, placeholder: "Job Site Address", value: form.address || "", onChange: e => setF("address", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Client Name", value: form.tenant || "", onChange: e => setF("tenant", e.target.value) }),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Job Budget ($)", value: form.rent || "", onChange: e => setF("rent", e.target.value) }),
             React.createElement("input", { style: inp, type: "date", value: form.leaseEnd || "", onChange: e => setF("leaseEnd", e.target.value) }),
-            React.createElement("input", { style: inp, type: "email", placeholder: "Tenant Email", value: form.tenantEmail || "", onChange: e => setF("tenantEmail", e.target.value) }),
-            React.createElement("input", { style: inp, placeholder: "Tenant Phone", value: form.tenantPhone || "", onChange: e => setF("tenantPhone", e.target.value) }),
+            React.createElement("input", { style: inp, type: "email", placeholder: "Client Email", value: form.tenantEmail || "", onChange: e => setF("tenantEmail", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Client Phone", value: form.tenantPhone || "", onChange: e => setF("tenantPhone", e.target.value) }),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: addProperty }, "Add"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
-        modal === "editProperty" && (React.createElement(Modal, { title: "Edit Property", onClose: closeModal },
-            React.createElement("input", { style: inp, placeholder: "Address", value: form.address || "", onChange: e => setF("address", e.target.value) }),
-            React.createElement("input", { style: inp, placeholder: "Tenant Name", value: form.tenant || "", onChange: e => setF("tenant", e.target.value) }),
-            React.createElement("input", { style: inp, type: "number", placeholder: "Monthly Rent", value: form.rent || "", onChange: e => setF("rent", e.target.value) }),
+        modal === "editProperty" && (React.createElement(Modal, { title: "Edit Job Site", onClose: closeModal },
+            React.createElement("input", { style: inp, placeholder: "Job Site Address", value: form.address || "", onChange: e => setF("address", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Client Name", value: form.tenant || "", onChange: e => setF("tenant", e.target.value) }),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Job Budget ($)", value: form.rent || "", onChange: e => setF("rent", e.target.value) }),
             React.createElement("input", { style: inp, type: "date", value: form.leaseEnd || "", onChange: e => setF("leaseEnd", e.target.value) }),
-            React.createElement("input", { style: inp, type: "email", placeholder: "Tenant Email", value: form.tenantEmail || "", onChange: e => setF("tenantEmail", e.target.value) }),
-            React.createElement("input", { style: inp, placeholder: "Tenant Phone", value: form.tenantPhone || "", onChange: e => setF("tenantPhone", e.target.value) }),
+            React.createElement("input", { style: inp, type: "email", placeholder: "Client Email", value: form.tenantEmail || "", onChange: e => setF("tenantEmail", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Client Phone", value: form.tenantPhone || "", onChange: e => setF("tenantPhone", e.target.value) }),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: updateProperty }, "Save Changes"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
-        modal === "repair" && (React.createElement(Modal, { title: "Log Repair", onClose: closeModal },
+        modal === "repair" && (React.createElement(Modal, { title: "Log Task", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
-                React.createElement("option", { value: "" }, "Select property\u2026"),
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
             React.createElement("input", { style: inp, placeholder: "Description", value: form.title || "", onChange: e => setF("title", e.target.value) }),
             React.createElement("select", { style: inp, value: form.trade || "", onChange: e => setF("trade", e.target.value) },
@@ -2545,11 +2624,11 @@ function App() {
             React.createElement("input", { style: inp, placeholder: "Notes", value: form.notes || "", onChange: e => setF("notes", e.target.value) }),
             React.createElement(PhotoPicker, { idPrefix: "repair-photo", label: "Photo", file: form.photoFile, resetKey: resetKey, onSelect: e => handlePhotoSelect(e, "photoFile") }),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
-                React.createElement("button", { style: btnP, onClick: addRepair }, "Log Repair"),
+                React.createElement("button", { style: btnP, onClick: addRepair }, "Log Task"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "editRepair" && (React.createElement(Modal, { title: "Edit Repair", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
-                React.createElement("option", { value: "" }, "Select property\u2026"),
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
             React.createElement("input", { style: inp, placeholder: "Description", value: form.title || "", onChange: e => setF("title", e.target.value) }),
             React.createElement("select", { style: inp, value: form.trade || "", onChange: e => setF("trade", e.target.value) },
@@ -2576,7 +2655,7 @@ function App() {
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "rent" && (React.createElement(Modal, { title: "Rent Increase", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
-                React.createElement("option", { value: "" }, "Select property\u2026"),
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
             React.createElement("input", { style: inp, type: "number", placeholder: "New Rent", value: form.newRent || "", onChange: e => setF("newRent", e.target.value) }),
             React.createElement("input", { style: inp, type: "date", value: form.effectiveDate || "", onChange: e => setF("effectiveDate", e.target.value) }),
@@ -2586,7 +2665,7 @@ function App() {
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "damage" && (React.createElement(Modal, { title: "Log Damage", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
-                React.createElement("option", { value: "" }, "Select property\u2026"),
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
             React.createElement("input", { style: inp, placeholder: "Description", value: form.description || "", onChange: e => setF("description", e.target.value) }),
             React.createElement("select", { style: inp, value: form.severity || "Minor", onChange: e => setF("severity", e.target.value) },
@@ -2600,7 +2679,7 @@ function App() {
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "editDamage" && (React.createElement(Modal, { title: "Edit Damage", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
-                React.createElement("option", { value: "" }, "Select property\u2026"),
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
             React.createElement("input", { style: inp, placeholder: "Description", value: form.description || "", onChange: e => setF("description", e.target.value) }),
             React.createElement("select", { style: inp, value: form.severity || "Minor", onChange: e => setF("severity", e.target.value) },
@@ -2613,7 +2692,7 @@ function App() {
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "lawnCare" && (React.createElement(Modal, { title: "Add Recurring Lawn Care", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
-                React.createElement("option", { value: "" }, "Select property\u2026"),
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
             React.createElement("input", { style: inp, placeholder: "Company Name", value: form.companyName || "", onChange: e => setF("companyName", e.target.value) }),
             React.createElement("input", { style: inp, type: "number", placeholder: "Amount", value: form.amount || "", onChange: e => setF("amount", e.target.value) }),
@@ -2627,7 +2706,7 @@ function App() {
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "editLawnCare" && (React.createElement(Modal, { title: "Edit Lawn Care", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
-                React.createElement("option", { value: "" }, "Select property\u2026"),
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
             React.createElement("input", { style: inp, placeholder: "Company Name", value: form.companyName || "", onChange: e => setF("companyName", e.target.value) }),
             React.createElement("input", { style: inp, type: "number", placeholder: "Amount", value: form.amount || "", onChange: e => setF("amount", e.target.value) }),
@@ -2639,7 +2718,7 @@ function App() {
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "utility" && (React.createElement(Modal, { title: "Log Utility Bill", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
-                React.createElement("option", { value: "" }, "Select property\u2026"),
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
             React.createElement("select", { style: inp, value: form.utilityType || "Water", onChange: e => setF("utilityType", e.target.value) },
                 React.createElement("option", null, "Water"),
@@ -2662,7 +2741,7 @@ function App() {
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "editUtility" && (React.createElement(Modal, { title: "Edit Utility Bill", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
-                React.createElement("option", { value: "" }, "Select property\u2026"),
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
             React.createElement("select", { style: inp, value: form.utilityType || "Water", onChange: e => setF("utilityType", e.target.value) },
                 React.createElement("option", null, "Water"),
@@ -2703,9 +2782,36 @@ function App() {
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: updateContractor }, "Save Changes"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "jobCost" && (React.createElement(Modal, { title: "Add Cost", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.jcPropertyId || "", onChange: e => setF("jcPropertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("select", { style: inp, value: form.jcCategory || "", onChange: e => setF("jcCategory", e.target.value) },
+                React.createElement("option", { value: "" }, "Select Category\u2026"),
+                ["Labor", "Material", "Permit", "Equipment", "Subcontractor", "Other"].map(c => React.createElement("option", { key: c, value: c }, c))),
+            React.createElement("input", { style: inp, placeholder: "Description", value: form.jcDescription || "", onChange: e => setF("jcDescription", e.target.value) }),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Amount ($)", value: form.jcAmount || "", onChange: e => setF("jcAmount", e.target.value) }),
+            React.createElement("input", { style: inp, type: "date", value: form.jcDate || "", onChange: e => setF("jcDate", e.target.value) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: addJobCost }, "Add"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "material" && (React.createElement(Modal, { title: "Add Material", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.matPropertyId || "", onChange: e => setF("matPropertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("input", { style: inp, placeholder: "Item name", value: form.matItemName || "", onChange: e => setF("matItemName", e.target.value) }),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Quantity", value: form.matQuantity || "", onChange: e => setF("matQuantity", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Unit (e.g. bags, boards, sq ft)", value: form.matUnit || "", onChange: e => setF("matUnit", e.target.value) }),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Cost per unit ($)", value: form.matCostPerUnit || "", onChange: e => setF("matCostPerUnit", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Supplier", value: form.matSupplier || "", onChange: e => setF("matSupplier", e.target.value) }),
+            React.createElement("input", { style: inp, type: "date", value: form.matDate || "", onChange: e => setF("matDate", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Notes", value: form.matNotes || "", onChange: e => setF("matNotes", e.target.value) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: addMaterial }, "Add"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "inspection" && (React.createElement(Modal, { title: "New Inspection", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
-                React.createElement("option", { value: "" }, "Select property\u2026"),
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
             React.createElement("select", { style: inp, value: form.inspectionType || "", onChange: e => setF("inspectionType", e.target.value) },
                 React.createElement("option", { value: "" }, "Select Inspection Type\u2026"),
@@ -2727,7 +2833,7 @@ function App() {
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "notice" && (React.createElement(Modal, { title: "Upload Notice", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
-                React.createElement("option", { value: "" }, "Select property\u2026"),
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
             React.createElement("input", { style: inp, placeholder: "Title", value: form.noticeTitle || "", onChange: e => setF("noticeTitle", e.target.value) }),
             React.createElement("select", { style: inp, value: form.noticeType || "", onChange: e => setF("noticeType", e.target.value) },
@@ -2739,7 +2845,7 @@ function App() {
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "contract" && (React.createElement(Modal, { title: "Upload Contract", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
-                React.createElement("option", { value: "" }, "Select property\u2026"),
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
             React.createElement("input", { style: inp, placeholder: "Title", value: form.contractTitle || "", onChange: e => setF("contractTitle", e.target.value) }),
             React.createElement("input", { style: inp, type: "file", accept: "image/*,application/pdf", onChange: e => setF("contractFile", e.target.files[0]) }),
@@ -2748,7 +2854,7 @@ function App() {
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "payment" && (React.createElement(Modal, { title: "Log Payment", onClose: closeModal },
     React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
-        React.createElement("option", { value: "" }, "Select property\u2026"),
+        React.createElement("option", { value: "" }, "Select job site\u2026"),
         properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
     React.createElement("select", { style: inp, value: form.paymentType || "", onChange: e => setF("paymentType", e.target.value) },
         React.createElement("option", { value: "" }, "Select Payment Type\u2026"),
@@ -2773,7 +2879,7 @@ function App() {
         React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "propertyTax" && (React.createElement(Modal, { title: "Upload Tax Document", onClose: closeModal },
     React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
-        React.createElement("option", { value: "" }, "Select property\u2026"),
+        React.createElement("option", { value: "" }, "Select job site\u2026"),
         properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
     React.createElement("input", { style: inp, placeholder: "Title", value: form.taxTitle || "", onChange: e => setF("taxTitle", e.target.value) }),
     React.createElement("input", { style: inp, placeholder: "Tax Year (e.g. 2026)", value: form.taxYear || "", onChange: e => setF("taxYear", e.target.value) }),
@@ -2835,7 +2941,7 @@ function App() {
         const prop = properties.find(p => String(p.id) === propId);
         setForm(f => ({ ...f, tenantPropertyId: propId, tenantFullName: prop ? (prop.tenant || "") : (f.tenantFullName || ""), tenantInviteEmail: prop ? (prop.tenant_email || "") : (f.tenantInviteEmail || ""), tenantInvitePhone: prop ? (prop.tenant_phone || "") : (f.tenantInvitePhone || "") }));
     } },
-        React.createElement("option", { value: "" }, "Select property\u2026"),
+        React.createElement("option", { value: "" }, "Select job site\u2026"),
         properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
     React.createElement("input", { style: inp, placeholder: "Tenant Full Name", value: form.tenantFullName || "", onChange: e => setF("tenantFullName", e.target.value) }),
     React.createElement("input", { style: inp, type: "email", placeholder: "Tenant Email (optional)", value: form.tenantInviteEmail || "", onChange: e => setF("tenantInviteEmail", e.target.value) }),
