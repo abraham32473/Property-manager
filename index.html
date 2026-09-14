@@ -216,7 +216,7 @@ function buildYearStatementPdf(p, year, stmt) {
         doc.setFont(undefined, "normal");
         y += 26;
     };
-    section("Punch List", stmt.pRepairs, r => `${r.created_at ? new Date(r.created_at).toLocaleDateString() : ""} \u2014 ${r.trade || "Repair"} \u2014 $${Number(r.cost || 0).toFixed(2)}`, stmt.repairsTotal);
+    section("Change Orders", stmt.pRepairs, r => `${r.created_at ? new Date(r.created_at).toLocaleDateString() : ""} \u2014 ${r.trade || "Repair"} \u2014 $${Number(r.cost || 0).toFixed(2)}`, stmt.repairsTotal);
     section("Tenant Damage (Landlord-Paid)", stmt.pDamages, d => `${d.created_at ? new Date(d.created_at).toLocaleDateString() : ""} \u2014 ${d.description || d.severity || "Damage"} \u2014 $${Number(d.estimated_cost || 0).toFixed(2)}`, stmt.damageTotal);
     section("Recurring Grounds Maintenance", stmt.pLawn, l => `${new Date(l.paid_date + "T00:00:00").toLocaleDateString()} \u2014 $${Number(l.amount || 0).toFixed(2)}`, stmt.lawnTotal);
     section("One-Time Grounds & Exterior Services", stmt.pGroundsServices, g => `${new Date(g.date_completed + "T00:00:00").toLocaleDateString()} \u2014 ${g.category}: ${g.description} \u2014 $${Number(g.cost || 0).toFixed(2)}`, stmt.groundsServicesTotal);
@@ -749,7 +749,7 @@ function HelpTab() {
             "Once active, tenants can submit repair requests with photos any time. Requests land here for you to review.",
             "Tap Push to Repairs to turn a tenant's request into a tracked repair job with cost and priority."
         ]},
-        { key: "repairs", tag: "Maintenance", color: C.blue, title: "Punch List", body: [
+        { key: "repairs", tag: "Maintenance", color: C.blue, title: "Change Orders", body: [
             "Log any repair job — trade, priority, cost, and notes — whether it came from a tenant request or you started it yourself.",
             "Assign a contractor and update status as work progresses. Costs here total automatically per property."
         ]},
@@ -2411,7 +2411,7 @@ function App() {
     if (!session) {
         return React.createElement(AuthScreen, null);
     }
-    const TABS = ["Dashboard", "Help", "Job Sites", "Punch List", "Client Requests", "Inspections", "Subcontractors", "Notices", "Contracts", "Payments", "Budget", "Materials", "My Profile"];
+    const TABS = ["Dashboard", "Help", "Job Sites", "Change Orders", "Client Requests", "Inspections", "Subcontractors", "Notices", "Contracts", "Payments", "Budget", "Materials", "My Profile"];
     return (React.createElement("div", { className: "app-root", style: { display: "flex", minHeight: "100vh" } },
         React.createElement("div", { className: "no-print", style: { width: 200, background: C.navy, padding: 20, color: "#fff", flexShrink: 0, display: "flex", flexDirection: "column" } },
             React.createElement("h2", { style: { fontSize: 18, marginBottom: 20 } }, "Construction Manager"),
@@ -2430,9 +2430,9 @@ function App() {
             React.createElement("div", { className: "no-print", style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 } },
                 React.createElement("h1", { style: { color: C.navy } }, tab),
                 tab === "Job Sites" && !viewProperty && React.createElement("button", { style: btnP, onClick: () => openModal("property") }, "+ Add Property"),
-                tab === "Punch List" && React.createElement("button", { style: btnP, onClick: () => openModal("repair") }, "+ Log Task"),
-                tab === "Punch List" && React.createElement("button", { style: btnS, onClick: () => setShowArchivedRepairs(v => !v) }, showArchivedRepairs ? "Hide Archived" : "Show Archived"),
-                tab === "Punch List" && showArchivedRepairs && React.createElement("button", { style: btnS, onClick: cleanupOldArchivedPhotos }, "Clean Up Old Photos"),
+                tab === "Change Orders" && React.createElement("button", { style: btnP, onClick: () => openModal("repair") }, "+ Log Task"),
+                tab === "Change Orders" && React.createElement("button", { style: btnS, onClick: () => setShowArchivedRepairs(v => !v) }, showArchivedRepairs ? "Hide Archived" : "Show Archived"),
+                tab === "Change Orders" && showArchivedRepairs && React.createElement("button", { style: btnS, onClick: cleanupOldArchivedPhotos }, "Clean Up Old Photos"),
                 tab === "Improvements" && React.createElement("button", { style: btnP, onClick: () => openModal("improvement") }, "+ Log Improvement"),
                 tab === "Rent History" && React.createElement("button", { style: btnP, onClick: () => openModal("rent") }, "+ Rent Increase"),
                 tab === "Damage Log" && React.createElement("button", { style: btnP, onClick: () => openModal("damage") }, "+ Log Damage"),
@@ -2492,7 +2492,7 @@ function App() {
                 React.createElement("div", { style: { background: "linear-gradient(135deg, " + C.navy + " 0%, #2d4270 60%, " + C.accent + " 130%)", borderRadius: 16, padding: "24px 22px", marginBottom: 18, color: "#fff", boxShadow: "0 4px 14px rgba(26,39,68,0.25)" } },
                     React.createElement("div", { style: { fontSize: 13, opacity: 0.85, fontWeight: 600, letterSpacing: "0.03em", textTransform: "uppercase" } }, "Welcome back"),
                     React.createElement("div", { style: { fontSize: 24, fontWeight: 800, fontFamily: "'Baloo 2', sans-serif", marginTop: 2 } }, (profile && profile.full_name) ? profile.full_name : "Contractor"),
-                    React.createElement("div", { style: { fontSize: 13, opacity: 0.9, marginTop: 6 } }, properties.length + (properties.length === 1 ? " property" : " properties") + " under management")
+                    React.createElement("div", { style: { fontSize: 13, opacity: 0.9, marginTop: 6 } }, properties.length + (properties.length === 1 ? " project" : " projects") + " under management")
                 ),
                 React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 16 } },
                     [
@@ -2652,7 +2652,7 @@ function App() {
                             isImageFile(ct.file_url) ? React.createElement("img", { src: ct.file_url, style: { maxWidth: 120, borderRadius: 6, marginTop: 6, display: "block", cursor: "pointer" }, onClick: () => setViewImage(ct.file_url) }) : ct.file_url && React.createElement(PdfThumbnail, { url: ct.file_url, size: 120, onClick: () => window.open(ct.file_url, "_blank") })),
                         isImageFile(ct.file_url) ? React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => setViewImage(ct.file_url) }, "View") : React.createElement("a", { href: ct.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View")))))));
             })(),
-            !loadingData && tab === "Punch List" && (repairs.filter(r => showArchivedRepairs ? r.archived : !r.archived).length === 0 ? React.createElement("div", { style: { color: C.muted } }, showArchivedRepairs ? "No archived repairs." : "No repairs logged yet.") : renderGroupedCards(repairs.filter(r => showArchivedRepairs ? r.archived : !r.archived), r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
+            !loadingData && tab === "Change Orders" && (repairs.filter(r => showArchivedRepairs ? r.archived : !r.archived).length === 0 ? React.createElement("div", { style: { color: C.muted } }, showArchivedRepairs ? "No archived repairs." : "No repairs logged yet.") : renderGroupedCards(repairs.filter(r => showArchivedRepairs ? r.archived : !r.archived), r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
                 React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
                     React.createElement("div", { style: { fontWeight: 700 } }, r.title),
                     r.archived && React.createElement("span", { style: { background: C.muted, color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 100 } }, "ARCHIVED")),
