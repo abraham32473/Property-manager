@@ -1221,23 +1221,23 @@ function App() {
     const addProperty = async () => {
         if (!form.address || !form.tenant)
             return;
-        const { data, error } = await sb.from("properties").insert({ user_id: userId(), address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null, tenant_email: form.tenantEmail || null, tenant_phone: form.tenantPhone || null }).select();
+        const { data, error } = await sb.from("properties").insert({ user_id: userId(), address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null, start_date: form.startDate || null, tenant_email: form.tenantEmail || null, tenant_phone: form.tenantPhone || null }).select();
         showErr(error);
         if (data)
             setProperties(p => [...p, ...data]);
         closeModal();
     };
     const openEditProperty = (p) => {
-        setForm({ propId: p.id, address: p.address, tenant: p.tenant, rent: p.rent, leaseEnd: p.lease_end || "", tenantEmail: p.tenant_email || "", tenantPhone: p.tenant_phone || "" });
+        setForm({ propId: p.id, address: p.address, tenant: p.tenant, rent: p.rent, leaseEnd: p.lease_end || "", startDate: p.start_date || "", tenantEmail: p.tenant_email || "", tenantPhone: p.tenant_phone || "" });
         setModal("editProperty");
     };
     const updateProperty = async () => {
         if (!form.propId || !form.address || !form.tenant)
             return;
-        const { error } = await sb.from("properties").update({ address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null, tenant_email: form.tenantEmail || null, tenant_phone: form.tenantPhone || null }).eq("id", form.propId);
+        const { error } = await sb.from("properties").update({ address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null, start_date: form.startDate || null, tenant_email: form.tenantEmail || null, tenant_phone: form.tenantPhone || null }).eq("id", form.propId);
         showErr(error);
         if (!error) {
-            setProperties(ps => ps.map(p => p.id === form.propId ? { ...p, address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null, tenant_email: form.tenantEmail || null, tenant_phone: form.tenantPhone || null } : p));
+            setProperties(ps => ps.map(p => p.id === form.propId ? { ...p, address: form.address, tenant: form.tenant, rent: Number(form.rent) || 0, lease_end: form.leaseEnd || null, start_date: form.startDate || null, tenant_email: form.tenantEmail || null, tenant_phone: form.tenantPhone || null } : p));
             closeModal();
         }
     };
@@ -2571,7 +2571,9 @@ function App() {
                         " \u2014 $",
                         Number(p.rent || 0).toLocaleString(),
                         " Job Budget ",
-                        p.leaseEnd ? `— Target Completion: ${p.leaseEnd}` : ""),
+                        p.start_date ? `— Start: ${p.start_date}` : "",
+                        " ",
+                        p.lease_end ? `— Target Completion: ${p.lease_end}` : ""),
                     React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 4 } },
                         "Punch List (",
                         pRepairs.length,
@@ -3017,7 +3019,7 @@ function App() {
                 d.setDate(d.getDate() + days);
                 return d.toISOString().slice(0, 10);
             };
-            const revisedDate = addDays(prop ? prop.leaseEnd : "", priorDaysTotal + thisDays);
+            const revisedDate = addDays(prop ? prop.lease_end : "", priorDaysTotal + thisDays);
             const row = (label, value, bold) => React.createElement("div", { style: { display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #eee", fontWeight: bold ? 700 : 400 } },
                 React.createElement("div", null, label),
                 React.createElement("div", null, value));
@@ -3063,7 +3065,7 @@ function App() {
                         row("This Change Order Amount:", (thisCost >= 0 ? "+" : "-") + "$" + Math.abs(thisCost).toFixed(2)),
                         row("TOTAL CHANGE ORDERS TO DATE (this Subcontractor):", "$" + (priorCostTotal + thisCost).toFixed(2), true)),
                 React.createElement("h3", { style: { borderBottom: "1px solid #333", paddingBottom: 4, marginTop: 20 } }, "3. Contract Time Adjustment"),
-                isClient && React.createElement("div", null, row("Original Substantial Completion Date:", prop && prop.leaseEnd ? prop.leaseEnd : "N/A")),
+                isClient && React.createElement("div", null, row("Original Substantial Completion Date:", prop && prop.lease_end ? prop.lease_end : "N/A")),
                 row("Net Adjustment from Previously Approved Change Orders:", priorDaysTotal + " Days"),
                 row("This Change Order Adjustment:", thisDays + " Days"),
                 isClient && row("REVISED SUBSTANTIAL COMPLETION DATE:", revisedDate || "N/A", true),
@@ -3342,6 +3344,9 @@ function App() {
             React.createElement("input", { style: inp, placeholder: "Job Site Address", value: form.address || "", onChange: e => setF("address", e.target.value) }),
             React.createElement("input", { style: inp, placeholder: "Client Name", value: form.tenant || "", onChange: e => setF("tenant", e.target.value) }),
             React.createElement("input", { style: inp, type: "number", placeholder: "Job Budget ($)", value: form.rent || "", onChange: e => setF("rent", e.target.value) }),
+            React.createElement("label", { style: { fontSize: 12, color: C.muted, display: "block", marginBottom: 4 } }, "Start Date"),
+            React.createElement("input", { style: inp, type: "date", value: form.startDate || "", onChange: e => setF("startDate", e.target.value) }),
+            React.createElement("label", { style: { fontSize: 12, color: C.muted, display: "block", marginBottom: 4 } }, "Target Completion Date"),
             React.createElement("input", { style: inp, type: "date", value: form.leaseEnd || "", onChange: e => setF("leaseEnd", e.target.value) }),
             React.createElement("input", { style: inp, type: "email", placeholder: "Client Email", value: form.tenantEmail || "", onChange: e => setF("tenantEmail", e.target.value) }),
             React.createElement("input", { style: inp, placeholder: "Client Phone", value: form.tenantPhone || "", onChange: e => setF("tenantPhone", e.target.value) }),
@@ -3352,6 +3357,9 @@ function App() {
             React.createElement("input", { style: inp, placeholder: "Job Site Address", value: form.address || "", onChange: e => setF("address", e.target.value) }),
             React.createElement("input", { style: inp, placeholder: "Client Name", value: form.tenant || "", onChange: e => setF("tenant", e.target.value) }),
             React.createElement("input", { style: inp, type: "number", placeholder: "Job Budget ($)", value: form.rent || "", onChange: e => setF("rent", e.target.value) }),
+            React.createElement("label", { style: { fontSize: 12, color: C.muted, display: "block", marginBottom: 4 } }, "Start Date"),
+            React.createElement("input", { style: inp, type: "date", value: form.startDate || "", onChange: e => setF("startDate", e.target.value) }),
+            React.createElement("label", { style: { fontSize: 12, color: C.muted, display: "block", marginBottom: 4 } }, "Target Completion Date"),
             React.createElement("input", { style: inp, type: "date", value: form.leaseEnd || "", onChange: e => setF("leaseEnd", e.target.value) }),
             React.createElement("input", { style: inp, type: "email", placeholder: "Client Email", value: form.tenantEmail || "", onChange: e => setF("tenantEmail", e.target.value) }),
             React.createElement("input", { style: inp, placeholder: "Client Phone", value: form.tenantPhone || "", onChange: e => setF("tenantPhone", e.target.value) }),
