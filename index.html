@@ -1401,6 +1401,7 @@ function App() {
             schedule_impact_days: Number(form.coScheduleImpact) || 0,
             co_date: form.coDate || new Date().toISOString().slice(0, 10),
             status: "Draft",
+            contractor_id: form.coContractorId ? Number(form.coContractorId) : null,
         }).select());
         showErr(error);
         if (data)
@@ -2889,6 +2890,7 @@ function App() {
                     React.createElement("div", { style: { fontWeight: 700 } }, "CO #" + co.co_number + " \u2014 " + co.description),
                     React.createElement("span", { style: { background: co.status === "Signed" ? C.green : (co.status === "Sent" ? C.blue : C.muted), color: "#fff", borderRadius: 100, padding: "3px 10px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" } }, co.status)),
                 co.reason && React.createElement("div", { style: { color: C.muted, fontSize: 13, marginTop: 4 } }, "Reason: " + co.reason),
+                co.contractor_id && React.createElement("div", { style: { color: C.muted, fontSize: 13, marginTop: 4 } }, "Assigned to: " + contractorName(co.contractor_id)),
                 React.createElement("div", { style: { color: C.muted, fontSize: 13, marginTop: 4 } },
                     "Cost Impact: ", (co.cost_impact >= 0 ? "+" : "-"), "$", Math.abs(co.cost_impact).toFixed(2),
                     " \u2014 Schedule Impact: ", co.schedule_impact_days, " day(s) \u2014 ", co.co_date),
@@ -2897,7 +2899,8 @@ function App() {
                         React.createElement("option", null, "Draft"),
                         React.createElement("option", null, "Sent"),
                         React.createElement("option", null, "Signed")),
-                    React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => { setPrintChangeOrder(co); setTimeout(() => window.print(), 100); } }, "Print"),
+                    React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => { setPrintChangeOrder({ ...co, _audience: "client" }); setTimeout(() => window.print(), 100); } }, "Print for Client"),
+                    React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => { setPrintChangeOrder({ ...co, _audience: "subcontractor" }); setTimeout(() => window.print(), 100); } }, "Print for Subcontractor"),
                     React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => emailChangeOrder(co) }, "Email"),
                     React.createElement("button", { style: btnDangerSm, onClick: () => deleteChangeOrder(co) }, "Delete")))))),
             !loadingData && tab === "Contracts" && (properties.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "Add a property first, then you can upload contracts to it.") :
@@ -3103,41 +3106,101 @@ function App() {
                         React.createElement(PhotoPicker, { idPrefix: "section-" + insp.id, label: "Photo", file: form.sectionPhoto, resetKey: resetKey, onSelect: e => handlePhotoSelect(e, "sectionPhoto") }),
                         React.createElement("button", { style: { ...btnP, opacity: submitting ? 0.6 : 1 }, disabled: submitting, onClick: () => addInspectionSection(insp.id) }, submitting ? "Saving\u2026" : "Add Section"))));
             })()),
-        printChangeOrder && (React.createElement("div", { className: "print-view", style: { position: "fixed", inset: 0, background: "#fff", zIndex: 200, padding: 30, overflowY: "auto" } },
-            React.createElement("button", { className: "no-print", style: { ...btnS, marginBottom: 16 }, onClick: () => setPrintChangeOrder(null) }, "Close"),
-            React.createElement("h2", null, "Change Order #" + printChangeOrder.co_number),
-            React.createElement("p", null,
-                React.createElement("strong", null, "Job Site:"),
-                " ",
-                propName(printChangeOrder.property_id)),
-            React.createElement("p", null,
-                React.createElement("strong", null, "Date:"),
-                " ",
-                printChangeOrder.co_date),
-            React.createElement("p", null,
-                React.createElement("strong", null, "Description of Change:"),
-                " ",
-                printChangeOrder.description),
-            React.createElement("p", null,
-                React.createElement("strong", null, "Reason for Change:"),
-                " ",
-                printChangeOrder.reason || "N/A"),
-            React.createElement("p", null,
-                React.createElement("strong", null, "Cost Impact:"),
-                " ",
-                (printChangeOrder.cost_impact >= 0 ? "+" : "-") + "$" + Math.abs(printChangeOrder.cost_impact).toFixed(2)),
-            React.createElement("p", null,
-                React.createElement("strong", null, "Schedule Impact:"),
-                " ",
-                printChangeOrder.schedule_impact_days + " day(s)"),
-            React.createElement("p", { style: { marginTop: 30, fontSize: 13, color: "#555" } }, "By signing below, the Client and Subcontractor agree to the change in scope, cost, and/or schedule described above."),
-            React.createElement("div", { style: { display: "flex", gap: 40, marginTop: 50, flexWrap: "wrap" } },
-                React.createElement("div", { style: { flex: 1, minWidth: 220 } },
-                    React.createElement("div", { style: { borderTop: "1px solid #333", paddingTop: 6 } }, "Client Signature"),
-                    React.createElement("div", { style: { marginTop: 30, borderTop: "1px solid #333", paddingTop: 6 } }, "Date")),
-                React.createElement("div", { style: { flex: 1, minWidth: 220 } },
-                    React.createElement("div", { style: { borderTop: "1px solid #333", paddingTop: 6 } }, "Subcontractor Signature"),
-                    React.createElement("div", { style: { marginTop: 30, borderTop: "1px solid #333", paddingTop: 6 } }, "Date"))))),
+        printChangeOrder && (() => {
+            const co = printChangeOrder;
+            const isClient = co._audience === "client";
+            const prop = properties.find(p => p.id === co.property_id);
+            const assignedContractor = co.contractor_id ? contractors.find(c => c.id === Number(co.contractor_id)) : null;
+            const priorCOs = changeOrders.filter(c => c.property_id === co.property_id && c.status === "Signed" && c.co_number < co.co_number && (isClient || c.contractor_id === co.contractor_id));
+            const priorCostTotal = priorCOs.reduce((s, c) => s + (Number(c.cost_impact) || 0), 0);
+            const priorDaysTotal = priorCOs.reduce((s, c) => s + (Number(c.schedule_impact_days) || 0), 0);
+            const thisCost = Number(co.cost_impact) || 0;
+            const thisDays = Number(co.schedule_impact_days) || 0;
+            const originalSum = prop ? Number(prop.rent) || 0 : 0;
+            const sumPriorToThis = originalSum + priorCostTotal;
+            const newSum = sumPriorToThis + thisCost;
+            const addDays = (dateStr, days) => {
+                if (!dateStr)
+                    return "";
+                const d = new Date(dateStr + "T00:00:00");
+                d.setDate(d.getDate() + days);
+                return d.toISOString().slice(0, 10);
+            };
+            const revisedDate = addDays(prop ? prop.leaseEnd : "", priorDaysTotal + thisDays);
+            const row = (label, value, bold) => React.createElement("div", { style: { display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #eee", fontWeight: bold ? 700 : 400 } },
+                React.createElement("div", null, label),
+                React.createElement("div", null, value));
+            return React.createElement("div", { className: "print-view", style: { position: "fixed", inset: 0, background: "#fff", zIndex: 200, padding: 30, overflowY: "auto", fontSize: 14, color: "#222" } },
+                React.createElement("button", { className: "no-print", style: { ...btnS, marginBottom: 16 }, onClick: () => setPrintChangeOrder(null) }, "Close"),
+                React.createElement("div", { style: { textAlign: "center", borderBottom: "2px solid #333", paddingBottom: 12, marginBottom: 16 } },
+                    React.createElement("div", { style: { fontWeight: 800, fontSize: 18 } }, "[Your Company Name]"),
+                    React.createElement("div", { style: { fontSize: 12, color: "#555" } }, "[Street Address] | [City, State, Zip] | [Phone] | [Email]"),
+                    React.createElement("div", { style: { fontSize: 12, color: "#555" } }, "California License No. [Class & License #]")),
+                React.createElement("h2", { style: { textAlign: "center", letterSpacing: 1 } }, isClient ? "PRIME CHANGE ORDER" : "SUBCONTRACT CHANGE ORDER"),
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", flexWrap: "wrap", marginBottom: 6 } },
+                    React.createElement("div", null, React.createElement("strong", null, "CHANGE ORDER NO.: "), co.co_number),
+                    React.createElement("div", null, React.createElement("strong", null, "DATE: "), co.co_date)),
+                React.createElement("div", { style: { marginBottom: 14 } }, React.createElement("strong", null, "PROJECT ADDRESS: "), prop ? prop.address : ""),
+                React.createElement("div", { style: { display: "flex", gap: 30, flexWrap: "wrap", marginBottom: 16 } },
+                    React.createElement("div", { style: { flex: 1, minWidth: 220 } },
+                        React.createElement("div", { style: { fontWeight: 700, marginBottom: 4 } }, isClient ? "TO (CLIENT):" : "TO (SUBCONTRACTOR):"),
+                        isClient
+                            ? React.createElement(React.Fragment, null,
+                                React.createElement("div", null, "Name: " + (prop ? (prop.tenant || "") : "")),
+                                React.createElement("div", null, "Email: " + (prop ? (prop.tenantEmail || "") : "")),
+                                React.createElement("div", null, "Phone: " + (prop ? (prop.tenantPhone || "") : "")))
+                            : React.createElement(React.Fragment, null,
+                                React.createElement("div", null, "Company: " + (assignedContractor ? assignedContractor.name : "")),
+                                React.createElement("div", null, "Trade: " + (assignedContractor ? assignedContractor.trade : "")),
+                                React.createElement("div", null, "Phone: " + (assignedContractor ? assignedContractor.phone : "")))),
+                    React.createElement("div", { style: { flex: 1, minWidth: 220 } },
+                        React.createElement("div", { style: { fontWeight: 700, marginBottom: 4 } }, "FROM (GENERAL CONTRACTOR):"),
+                        React.createElement("div", null, "Name: " + ((profile && profile.full_name) ? profile.full_name : "")))),
+                React.createElement("h3", { style: { borderBottom: "1px solid #333", paddingBottom: 4 } }, "1. Description of Work & Scope Change"),
+                React.createElement("p", null, co.description),
+                React.createElement("p", null, React.createElement("strong", null, "Reason for Change: "), co.reason || "N/A"),
+                React.createElement("h3", { style: { borderBottom: "1px solid #333", paddingBottom: 4, marginTop: 20 } }, isClient ? "2. Contract Price Adjustment" : "2. Subcontract Price Adjustment"),
+                isClient
+                    ? React.createElement(React.Fragment, null,
+                        row("Original Contract Sum:", "$" + originalSum.toFixed(2)),
+                        row("Net Change by Previously Approved Change Orders:", "$" + priorCostTotal.toFixed(2)),
+                        row("Contract Sum Prior to This Change Order:", "$" + sumPriorToThis.toFixed(2)),
+                        row("This Change Order Amount:", (thisCost >= 0 ? "+" : "-") + "$" + Math.abs(thisCost).toFixed(2)),
+                        row("NEW CONTRACT SUM INCLUDING THIS CHANGE ORDER:", "$" + newSum.toFixed(2), true))
+                    : React.createElement(React.Fragment, null,
+                        row("Net Change by Previously Approved Change Orders (this Subcontractor):", "$" + priorCostTotal.toFixed(2)),
+                        row("This Change Order Amount:", (thisCost >= 0 ? "+" : "-") + "$" + Math.abs(thisCost).toFixed(2)),
+                        row("TOTAL CHANGE ORDERS TO DATE (this Subcontractor):", "$" + (priorCostTotal + thisCost).toFixed(2), true)),
+                React.createElement("h3", { style: { borderBottom: "1px solid #333", paddingBottom: 4, marginTop: 20 } }, "3. Contract Time Adjustment"),
+                isClient && React.createElement("div", null, row("Original Substantial Completion Date:", prop && prop.leaseEnd ? prop.leaseEnd : "N/A")),
+                row("Net Adjustment from Previously Approved Change Orders:", priorDaysTotal + " Days"),
+                row("This Change Order Adjustment:", thisDays + " Days"),
+                isClient && row("REVISED SUBSTANTIAL COMPLETION DATE:", revisedDate || "N/A", true),
+                React.createElement("h3", { style: { borderBottom: "1px solid #333", paddingBottom: 4, marginTop: 20 } }, "4. Legal Terms and Conditions"),
+                React.createElement("p", { style: { fontSize: 12, color: "#444" } },
+                    React.createElement("strong", null, "A. FULL AND FINAL SETTLEMENT: "),
+                    "Execution of this Change Order constitutes a full, complete, and final accord and satisfaction between the ",
+                    isClient ? "Owner" : "Subcontractor",
+                    " and Contractor for all costs, delays, disruptions, acceleration, and impact associated with the work described herein."),
+                React.createElement("p", { style: { fontSize: 12, color: "#444" } },
+                    React.createElement("strong", null, "B. INTEGRATION CLAUSE: "),
+                    "Except as explicitly modified herein, all original terms, conditions, specifications, insurance requirements, and warranties of the underlying ",
+                    isClient ? "Contract" : "Subcontract Agreement",
+                    " remain in full force and effect."),
+                React.createElement("h3", { style: { borderBottom: "1px solid #333", paddingBottom: 4, marginTop: 20 } }, "5. Authorization and Execution"),
+                React.createElement("p", { style: { fontSize: 12, color: "#555" } }, "Not valid until signed by both parties."),
+                React.createElement("div", { style: { display: "flex", gap: 40, marginTop: 40, flexWrap: "wrap" } },
+                    React.createElement("div", { style: { flex: 1, minWidth: 220 } },
+                        React.createElement("div", { style: { fontWeight: 700, marginBottom: 30 } }, "CONTRACTOR:"),
+                        React.createElement("div", { style: { borderTop: "1px solid #333", paddingTop: 6 } }, "Authorized Signature"),
+                        React.createElement("div", { style: { marginTop: 30, borderTop: "1px solid #333", paddingTop: 6 } }, "Printed Name & Title"),
+                        React.createElement("div", { style: { marginTop: 30, borderTop: "1px solid #333", paddingTop: 6 } }, "Date")),
+                    React.createElement("div", { style: { flex: 1, minWidth: 220 } },
+                        React.createElement("div", { style: { fontWeight: 700, marginBottom: 30 } }, isClient ? "OWNER:" : "SUBCONTRACTOR:"),
+                        React.createElement("div", { style: { borderTop: "1px solid #333", paddingTop: 6 } }, "Authorized Signature"),
+                        React.createElement("div", { style: { marginTop: 30, borderTop: "1px solid #333", paddingTop: 6 } }, "Printed Name & Title"),
+                        React.createElement("div", { style: { marginTop: 30, borderTop: "1px solid #333", paddingTop: 6 } }, "Date"))));
+        })(),
         printRepair && (React.createElement("div", { className: "print-view", style: { position: "fixed", inset: 0, background: "#fff", zIndex: 200, padding: 30 } },
             React.createElement("button", { className: "no-print", style: { ...btnS, marginBottom: 16 }, onClick: () => setPrintRepair(null) }, "Close"),
             React.createElement("h2", null, "Repair Request"),
@@ -3722,6 +3785,9 @@ function App() {
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
             React.createElement("input", { style: inp, placeholder: "Description of change", value: form.coDescription || "", onChange: e => setF("coDescription", e.target.value) }),
             React.createElement("input", { style: inp, placeholder: "Reason for change", value: form.coReason || "", onChange: e => setF("coReason", e.target.value) }),
+            React.createElement("select", { style: inp, value: form.coContractorId || "", onChange: e => setF("coContractorId", e.target.value) },
+                React.createElement("option", { value: "" }, "Assign Subcontractor (optional)"),
+                contractors.map(c => React.createElement("option", { key: c.id, value: c.id }, c.name, " \u2014 ", c.trade))),
             React.createElement("input", { style: inp, type: "number", placeholder: "Cost Impact ($ \u2014 use negative for a credit)", value: form.coCostImpact || "", onChange: e => setF("coCostImpact", e.target.value) }),
             React.createElement("input", { style: inp, type: "number", placeholder: "Schedule Impact (days)", value: form.coScheduleImpact || "", onChange: e => setF("coScheduleImpact", e.target.value) }),
             React.createElement("input", { style: inp, type: "date", value: form.coDate || "", onChange: e => setF("coDate", e.target.value) }),
