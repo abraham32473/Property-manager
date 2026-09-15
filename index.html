@@ -216,7 +216,7 @@ function buildYearStatementPdf(p, year, stmt) {
         doc.setFont(undefined, "normal");
         y += 26;
     };
-    section("Change Orders", stmt.pRepairs, r => `${r.created_at ? new Date(r.created_at).toLocaleDateString() : ""} \u2014 ${r.trade || "Repair"} \u2014 $${Number(r.cost || 0).toFixed(2)}`, stmt.repairsTotal);
+    section("Punch List", stmt.pRepairs, r => `${r.created_at ? new Date(r.created_at).toLocaleDateString() : ""} \u2014 ${r.trade || "Repair"} \u2014 $${Number(r.cost || 0).toFixed(2)}`, stmt.repairsTotal);
     section("Tenant Damage (Landlord-Paid)", stmt.pDamages, d => `${d.created_at ? new Date(d.created_at).toLocaleDateString() : ""} \u2014 ${d.description || d.severity || "Damage"} \u2014 $${Number(d.estimated_cost || 0).toFixed(2)}`, stmt.damageTotal);
     section("Recurring Grounds Maintenance", stmt.pLawn, l => `${new Date(l.paid_date + "T00:00:00").toLocaleDateString()} \u2014 $${Number(l.amount || 0).toFixed(2)}`, stmt.lawnTotal);
     section("One-Time Grounds & Exterior Services", stmt.pGroundsServices, g => `${new Date(g.date_completed + "T00:00:00").toLocaleDateString()} \u2014 ${g.category}: ${g.description} \u2014 $${Number(g.cost || 0).toFixed(2)}`, stmt.groundsServicesTotal);
@@ -749,7 +749,7 @@ function HelpTab() {
             "Once active, tenants can submit repair requests with photos any time. Requests land here for you to review.",
             "Tap Push to Repairs to turn a tenant's request into a tracked repair job with cost and priority."
         ]},
-        { key: "repairs", tag: "Maintenance", color: C.blue, title: "Change Orders", body: [
+        { key: "repairs", tag: "Maintenance", color: C.blue, title: "Punch List", body: [
             "Log any repair job — trade, priority, cost, and notes — whether it came from a tenant request or you started it yourself.",
             "Assign a contractor and update status as work progresses. Costs here total automatically per property."
         ]},
@@ -913,6 +913,8 @@ function App() {
         return null;
     } });
     const [printRepair, setPrintRepair] = useState(null);
+    const [changeOrders, setChangeOrders] = useState([]);
+    const [printChangeOrder, setPrintChangeOrder] = useState(null);
     const [printDamage, setPrintDamage] = useState(null);
     const [printInspection, setPrintInspection] = useState(null);
     const [printProperty, setPrintProperty] = useState(null);
@@ -1084,7 +1086,7 @@ function App() {
     }, [session?.user?.id]);
     const loadAllData = async () => {
         setLoadingData(true);
-        const [p, r, rh, d, c, ins, nt, ct, pm, pt, fm, res, rl, pr, tn, rq, lc, lcp, ut, imp, gs, jc, mt] = await Promise.all([
+        const [p, r, rh, d, c, ins, nt, ct, pm, pt, fm, res, rl, pr, tn, rq, lc, lcp, ut, imp, gs, jc, mt, co] = await Promise.all([
             sb.from("properties").select("*").order("id"),
             sb.from("repairs").select("*").order("id"),
             sb.from("rent_history").select("*").order("id"),
@@ -1108,6 +1110,7 @@ function App() {
             sb.from("grounds_services").select("*").order("date_completed", { ascending: false }),
             sb.from("job_costs").select("*").order("cost_date", { ascending: false }),
             sb.from("materials").select("*").order("purchase_date", { ascending: false }),
+            sb.from("change_orders").select("*").order("co_number", { ascending: false }),
         ]);
         if (p.data)
             setProperties(p.data);
@@ -1155,6 +1158,8 @@ function App() {
             setJobCosts(jc.data);
         if (mt.data)
             setMaterials(mt.data);
+        if (co.data)
+            setChangeOrders(co.data);
         if (lc.data && lcp.data)
             await ensureLawnCarePayments(lc.data, lcp.data);
         setLoadingData(false);
@@ -1380,6 +1385,47 @@ function App() {
         showErr(error);
         if (!error)
             setMaterials(m => m.filter(x => x.id !== mat.id));
+    };
+    const addChangeOrder = async () => {
+        if (!form.coPropertyId || !form.coDescription)
+            return;
+        const existingForJob = changeOrders.filter(c => c.property_id === Number(form.coPropertyId));
+        const nextNumber = existingForJob.length === 0 ? 1 : Math.max(...existingForJob.map(c => c.co_number)) + 1;
+        const { data, error } = await withRetry(() => sb.from("change_orders").insert({
+            user_id: userId(),
+            property_id: Number(form.coPropertyId),
+            co_number: nextNumber,
+            description: form.coDescription,
+            reason: form.coReason || "",
+            cost_impact: Number(form.coCostImpact) || 0,
+            schedule_impact_days: Number(form.coScheduleImpact) || 0,
+            co_date: form.coDate || new Date().toISOString().slice(0, 10),
+            status: "Draft",
+        }).select());
+        showErr(error);
+        if (data)
+            setChangeOrders(c => [...data, ...c]);
+        closeModal();
+    };
+    const deleteChangeOrder = async (co) => {
+        if (!window.confirm(`Delete Change Order #${co.co_number}?`))
+            return;
+        const { error } = await sb.from("change_orders").delete().eq("id", co.id);
+        showErr(error);
+        if (!error)
+            setChangeOrders(c => c.filter(x => x.id !== co.id));
+    };
+    const updateChangeOrderStatus = async (id, status) => {
+        const { error } = await sb.from("change_orders").update({ status }).eq("id", id);
+        showErr(error);
+        if (!error)
+            setChangeOrders(c => c.map(x => x.id === id ? { ...x, status } : x));
+    };
+    const emailChangeOrder = (co) => {
+        const subject = encodeURIComponent(`Change Order #${co.co_number} — ${propName(co.property_id)}`);
+        const impactSign = co.cost_impact >= 0 ? "+" : "-";
+        const body = encodeURIComponent(`Change Order #${co.co_number}\nJob Site: ${propName(co.property_id)}\nDate: ${co.co_date}\n\nDescription: ${co.description}\nReason: ${co.reason || "N/A"}\nCost Impact: ${impactSign}$${Math.abs(co.cost_impact).toFixed(2)}\nSchedule Impact: ${co.schedule_impact_days} day(s)\n\nPlease review, sign, and return this Change Order to confirm approval.`);
+        openMailto(`mailto:?subject=${subject}&body=${body}`);
     };
     const addLawnCare = async () => {
         if (!form.propertyId || !form.amount || !form.dayOfMonth)
@@ -2411,7 +2457,7 @@ function App() {
     if (!session) {
         return React.createElement(AuthScreen, null);
     }
-    const TABS = ["Dashboard", "Help", "Job Sites", "Change Orders", "Client Requests", "Inspections", "Subcontractors", "Notices", "Contracts", "Payments", "Budget", "Materials", "My Profile"];
+    const TABS = ["Dashboard", "Help", "Job Sites", "Punch List", "Client Requests", "Inspections", "Subcontractors", "Change Orders", "Contracts", "Payments", "Budget", "Materials", "My Profile"];
     return (React.createElement("div", { className: "app-root", style: { display: "flex", minHeight: "100vh" } },
         React.createElement("div", { className: "no-print", style: { width: 200, background: C.navy, padding: 20, color: "#fff", flexShrink: 0, display: "flex", flexDirection: "column" } },
             React.createElement("h2", { style: { fontSize: 18, marginBottom: 20 } }, "Construction Manager"),
@@ -2430,9 +2476,9 @@ function App() {
             React.createElement("div", { className: "no-print", style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 } },
                 React.createElement("h1", { style: { color: C.navy } }, tab),
                 tab === "Job Sites" && !viewProperty && React.createElement("button", { style: btnP, onClick: () => openModal("property") }, "+ Add Property"),
-                tab === "Change Orders" && React.createElement("button", { style: btnP, onClick: () => openModal("repair") }, "+ Log Task"),
-                tab === "Change Orders" && React.createElement("button", { style: btnS, onClick: () => setShowArchivedRepairs(v => !v) }, showArchivedRepairs ? "Hide Archived" : "Show Archived"),
-                tab === "Change Orders" && showArchivedRepairs && React.createElement("button", { style: btnS, onClick: cleanupOldArchivedPhotos }, "Clean Up Old Photos"),
+                tab === "Punch List" && React.createElement("button", { style: btnP, onClick: () => openModal("repair") }, "+ Log Task"),
+                tab === "Punch List" && React.createElement("button", { style: btnS, onClick: () => setShowArchivedRepairs(v => !v) }, showArchivedRepairs ? "Hide Archived" : "Show Archived"),
+                tab === "Punch List" && showArchivedRepairs && React.createElement("button", { style: btnS, onClick: cleanupOldArchivedPhotos }, "Clean Up Old Photos"),
                 tab === "Improvements" && React.createElement("button", { style: btnP, onClick: () => openModal("improvement") }, "+ Log Improvement"),
                 tab === "Rent History" && React.createElement("button", { style: btnP, onClick: () => openModal("rent") }, "+ Rent Increase"),
                 tab === "Damage Log" && React.createElement("button", { style: btnP, onClick: () => openModal("damage") }, "+ Log Damage"),
@@ -2441,7 +2487,7 @@ function App() {
                 tab === "Budget" && React.createElement("button", { style: btnP, onClick: () => openModal("jobCost") }, "+ Add Cost"),
                 tab === "Materials" && React.createElement("button", { style: btnP, onClick: () => openModal("material") }, "+ Add Material"),
                 tab === "Inspections" && !viewInspection && React.createElement("button", { style: btnP, onClick: () => openModal("inspection") }, "+ New Inspection"),
-                tab === "Notices" && React.createElement("button", { style: btnP, onClick: () => openModal("notice") }, "+ Upload Notice"),
+                tab === "Change Orders" && React.createElement("button", { style: btnP, onClick: () => openModal("changeOrder") }, "+ New Change Order"),
                 tab === "Client Requests" && React.createElement("button", { style: btnP, onClick: () => openModal("inviteTenant") }, "+ Invite Tenant"),
                 tab === "Contracts" && React.createElement("button", { style: btnP, onClick: () => openModal("contract") }, "+ Upload Contract"),
                 tab === "Payments" && React.createElement("button", { style: btnP, onClick: () => openModal("payment") }, "+ Log Payment"),
@@ -2496,7 +2542,7 @@ function App() {
                 ),
                 React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 16 } },
                     [
-                        { key: "repairs", label: "Change Orders", value: openRepairs, icon: "\uD83D\uDD27", grad: "linear-gradient(135deg,#c62828 0%,#ff7043 100%)" },
+                        { key: "repairs", label: "Open Tasks", value: openRepairs, icon: "\uD83D\uDD27", grad: "linear-gradient(135deg,#c62828 0%,#ff7043 100%)" },
                         { key: "contractors", label: "Subcontractors", value: contractors.length, icon: "\uD83D\uDC77", grad: "linear-gradient(135deg,#1256a3 0%,#42a5f5 100%)" },
                         { key: "inspections", label: "Pending Inspections", value: inspections.length, icon: "\uD83D\uDCCB", grad: "linear-gradient(135deg,#b45309 0%,#f59e0b 100%)" },
                     ].map(w => React.createElement("div", { key: w.key, style: { background: w.grad, padding: "18px 16px", borderRadius: 16, color: "#fff", boxShadow: "0 4px 10px rgba(26,39,68,0.18)" } },
@@ -2652,7 +2698,7 @@ function App() {
                             isImageFile(ct.file_url) ? React.createElement("img", { src: ct.file_url, style: { maxWidth: 120, borderRadius: 6, marginTop: 6, display: "block", cursor: "pointer" }, onClick: () => setViewImage(ct.file_url) }) : ct.file_url && React.createElement(PdfThumbnail, { url: ct.file_url, size: 120, onClick: () => window.open(ct.file_url, "_blank") })),
                         isImageFile(ct.file_url) ? React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => setViewImage(ct.file_url) }, "View") : React.createElement("a", { href: ct.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View")))))));
             })(),
-            !loadingData && tab === "Change Orders" && (repairs.filter(r => showArchivedRepairs ? r.archived : !r.archived).length === 0 ? React.createElement("div", { style: { color: C.muted } }, showArchivedRepairs ? "No archived repairs." : "No repairs logged yet.") : renderGroupedCards(repairs.filter(r => showArchivedRepairs ? r.archived : !r.archived), r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
+            !loadingData && tab === "Punch List" && (repairs.filter(r => showArchivedRepairs ? r.archived : !r.archived).length === 0 ? React.createElement("div", { style: { color: C.muted } }, showArchivedRepairs ? "No archived repairs." : "No repairs logged yet.") : renderGroupedCards(repairs.filter(r => showArchivedRepairs ? r.archived : !r.archived), r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
                 React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
                     React.createElement("div", { style: { fontWeight: 700 } }, r.title),
                     r.archived && React.createElement("span", { style: { background: C.muted, color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 100 } }, "ARCHIVED")),
@@ -2838,23 +2884,22 @@ function App() {
                     React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, m.quantity, " ", m.unit, " \u00d7 $", Number(m.cost_per_unit).toFixed(2), m.supplier ? " — " + m.supplier : "", " — ", m.purchase_date),
                     m.notes && React.createElement("div", { style: { color: C.muted, fontSize: 12, marginTop: 4 } }, m.notes)),
                 React.createElement("button", { style: btnDangerSm, onClick: () => deleteMaterial(m) }, "Delete"))))),
-            !loadingData && tab === "Notices" && (properties.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "Add a property first, then you can upload notices to it.") :
-                properties.map(p => {
-                    const list = notices.filter(n => n.property_id === p.id);
-                    return (React.createElement("div", { key: p.id, style: { marginBottom: 16 } },
-                        React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8 } }, p.address),
-                        list.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 8 } }, "No notices uploaded yet.") : list.map(n => (React.createElement("div", { key: n.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
-                            React.createElement("div", null,
-                                React.createElement("div", { style: { fontWeight: 700 } }, n.title),
-                                React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
-                                    n.notice_type,
-                                    n.created_at ? ` — ${new Date(n.created_at).toLocaleDateString()}` : ""),
-                            isImageFile(n.file_url) ? React.createElement("img", { src: n.file_url, style: { maxWidth: 120, borderRadius: 6, marginTop: 6, display: "block", cursor: "pointer" }, onClick: () => setViewImage(n.file_url) }) : n.file_url && React.createElement(PdfThumbnail, { url: n.file_url, size: 120, onClick: () => window.open(n.file_url, "_blank") })),
-                            React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
-                                isImageFile(n.file_url) ? React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => setViewImage(n.file_url) }, "View") : React.createElement("a", { href: n.file_url, target: "_blank", rel: "noopener noreferrer", style: { ...btnS, padding: "5px 10px", fontSize: 12, textDecoration: "none", display: "inline-block" } }, "View"),
-                                React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => { if (isImageFile(n.file_url)) { setPrintDoc({ title: n.title, url: n.file_url, isImage: true }); setTimeout(() => window.print(), 400); } else { window.open(n.file_url, "_blank"); } } }, "Print"),
-                                React.createElement("button", { style: btnDangerSm, onClick: () => deleteNotice(n) }, "Delete")))))));
-                })),
+            !loadingData && tab === "Change Orders" && (changeOrders.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No change orders yet.") : renderGroupedCards(changeOrders, co => (React.createElement("div", { key: co.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
+                    React.createElement("div", { style: { fontWeight: 700 } }, "CO #" + co.co_number + " \u2014 " + co.description),
+                    React.createElement("span", { style: { background: co.status === "Signed" ? C.green : (co.status === "Sent" ? C.blue : C.muted), color: "#fff", borderRadius: 100, padding: "3px 10px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" } }, co.status)),
+                co.reason && React.createElement("div", { style: { color: C.muted, fontSize: 13, marginTop: 4 } }, "Reason: " + co.reason),
+                React.createElement("div", { style: { color: C.muted, fontSize: 13, marginTop: 4 } },
+                    "Cost Impact: ", (co.cost_impact >= 0 ? "+" : "-"), "$", Math.abs(co.cost_impact).toFixed(2),
+                    " \u2014 Schedule Impact: ", co.schedule_impact_days, " day(s) \u2014 ", co.co_date),
+                React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10 } },
+                    React.createElement("select", { value: co.status, onChange: e => updateChangeOrderStatus(co.id, e.target.value), style: { ...inp, width: "auto", marginBottom: 0 } },
+                        React.createElement("option", null, "Draft"),
+                        React.createElement("option", null, "Sent"),
+                        React.createElement("option", null, "Signed")),
+                    React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => { setPrintChangeOrder(co); setTimeout(() => window.print(), 100); } }, "Print"),
+                    React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => emailChangeOrder(co) }, "Email"),
+                    React.createElement("button", { style: btnDangerSm, onClick: () => deleteChangeOrder(co) }, "Delete")))))),
             !loadingData && tab === "Contracts" && (properties.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "Add a property first, then you can upload contracts to it.") :
                 properties.map(p => {
                     const list = contracts.filter(ct => ct.property_id === p.id);
@@ -3058,6 +3103,41 @@ function App() {
                         React.createElement(PhotoPicker, { idPrefix: "section-" + insp.id, label: "Photo", file: form.sectionPhoto, resetKey: resetKey, onSelect: e => handlePhotoSelect(e, "sectionPhoto") }),
                         React.createElement("button", { style: { ...btnP, opacity: submitting ? 0.6 : 1 }, disabled: submitting, onClick: () => addInspectionSection(insp.id) }, submitting ? "Saving\u2026" : "Add Section"))));
             })()),
+        printChangeOrder && (React.createElement("div", { className: "print-view", style: { position: "fixed", inset: 0, background: "#fff", zIndex: 200, padding: 30, overflowY: "auto" } },
+            React.createElement("button", { className: "no-print", style: { ...btnS, marginBottom: 16 }, onClick: () => setPrintChangeOrder(null) }, "Close"),
+            React.createElement("h2", null, "Change Order #" + printChangeOrder.co_number),
+            React.createElement("p", null,
+                React.createElement("strong", null, "Job Site:"),
+                " ",
+                propName(printChangeOrder.property_id)),
+            React.createElement("p", null,
+                React.createElement("strong", null, "Date:"),
+                " ",
+                printChangeOrder.co_date),
+            React.createElement("p", null,
+                React.createElement("strong", null, "Description of Change:"),
+                " ",
+                printChangeOrder.description),
+            React.createElement("p", null,
+                React.createElement("strong", null, "Reason for Change:"),
+                " ",
+                printChangeOrder.reason || "N/A"),
+            React.createElement("p", null,
+                React.createElement("strong", null, "Cost Impact:"),
+                " ",
+                (printChangeOrder.cost_impact >= 0 ? "+" : "-") + "$" + Math.abs(printChangeOrder.cost_impact).toFixed(2)),
+            React.createElement("p", null,
+                React.createElement("strong", null, "Schedule Impact:"),
+                " ",
+                printChangeOrder.schedule_impact_days + " day(s)"),
+            React.createElement("p", { style: { marginTop: 30, fontSize: 13, color: "#555" } }, "By signing below, the Client and Subcontractor agree to the change in scope, cost, and/or schedule described above."),
+            React.createElement("div", { style: { display: "flex", gap: 40, marginTop: 50, flexWrap: "wrap" } },
+                React.createElement("div", { style: { flex: 1, minWidth: 220 } },
+                    React.createElement("div", { style: { borderTop: "1px solid #333", paddingTop: 6 } }, "Client Signature"),
+                    React.createElement("div", { style: { marginTop: 30, borderTop: "1px solid #333", paddingTop: 6 } }, "Date")),
+                React.createElement("div", { style: { flex: 1, minWidth: 220 } },
+                    React.createElement("div", { style: { borderTop: "1px solid #333", paddingTop: 6 } }, "Subcontractor Signature"),
+                    React.createElement("div", { style: { marginTop: 30, borderTop: "1px solid #333", paddingTop: 6 } }, "Date"))))),
         printRepair && (React.createElement("div", { className: "print-view", style: { position: "fixed", inset: 0, background: "#fff", zIndex: 200, padding: 30 } },
             React.createElement("button", { className: "no-print", style: { ...btnS, marginBottom: 16 }, onClick: () => setPrintRepair(null) }, "Close"),
             React.createElement("h2", null, "Repair Request"),
@@ -3635,6 +3715,18 @@ function App() {
             React.createElement("input", { style: inp, placeholder: "Notes", value: form.sectionNotes || "", onChange: e => setF("sectionNotes", e.target.value) }),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: updateInspectionSection }, "Save Changes"),
+                React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
+        modal === "changeOrder" && (React.createElement(Modal, { title: "New Change Order", onClose: closeModal },
+            React.createElement("select", { style: inp, value: form.coPropertyId || "", onChange: e => setF("coPropertyId", e.target.value) },
+                React.createElement("option", { value: "" }, "Select job site\u2026"),
+                properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
+            React.createElement("input", { style: inp, placeholder: "Description of change", value: form.coDescription || "", onChange: e => setF("coDescription", e.target.value) }),
+            React.createElement("input", { style: inp, placeholder: "Reason for change", value: form.coReason || "", onChange: e => setF("coReason", e.target.value) }),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Cost Impact ($ \u2014 use negative for a credit)", value: form.coCostImpact || "", onChange: e => setF("coCostImpact", e.target.value) }),
+            React.createElement("input", { style: inp, type: "number", placeholder: "Schedule Impact (days)", value: form.coScheduleImpact || "", onChange: e => setF("coScheduleImpact", e.target.value) }),
+            React.createElement("input", { style: inp, type: "date", value: form.coDate || "", onChange: e => setF("coDate", e.target.value) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("button", { style: btnP, onClick: addChangeOrder }, "Create"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         modal === "notice" && (React.createElement(Modal, { title: "Upload Notice", onClose: closeModal },
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
