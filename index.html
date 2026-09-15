@@ -1695,7 +1695,7 @@ function App() {
             return;
         setSubmitting(true);
         try {
-            const { data, error } = await sb.from("inspections").insert({ user_id: userId(), property_id: Number(form.propertyId), inspection_type: form.inspectionType, inspection_date: new Date().toISOString().slice(0, 10), sections: [] }).select();
+            const { data, error } = await sb.from("inspections").insert({ user_id: userId(), property_id: Number(form.propertyId), inspection_type: form.inspectionType, inspection_date: form.inspectionDate || new Date().toISOString().slice(0, 10), status: "Scheduled", sections: [] }).select();
             showErr(error);
             if (data)
                 setInspections(i => [...i, ...data]);
@@ -2219,6 +2219,12 @@ function App() {
                 setViewInspection(null);
         }
     };
+    const updateInspectionStatus = async (id, status) => {
+        const { error } = await sb.from("inspections").update({ status }).eq("id", id);
+        showErr(error);
+        if (!error)
+            setInspections(is => is.map(i => i.id === id ? { ...i, status } : i));
+    };
     const deleteInspectionSection = async (insp, index) => {
         if (!window.confirm("Delete this section?"))
             return;
@@ -2474,7 +2480,7 @@ function App() {
                 tab === "Materials" && React.createElement("button", { style: btnP, onClick: () => openModal("material") }, "+ Add Material"),
                 tab === "Inspections" && !viewInspection && React.createElement("button", { style: btnP, onClick: () => openModal("inspection") }, "+ New Inspection"),
                 tab === "Change Orders" && React.createElement("button", { style: btnP, onClick: () => openModal("changeOrder") }, "+ New Change Order"),
-                tab === "Client Requests" && React.createElement("button", { style: btnP, onClick: () => openModal("inviteTenant") }, "+ Invite Tenant"),
+                tab === "Client Requests" && React.createElement("button", { style: btnP, onClick: () => openModal("inviteTenant") }, "+ Invite Client"),
                 tab === "Contracts" && React.createElement("button", { style: btnP, onClick: () => openModal("contract") }, "+ Upload Contract"),
                 tab === "Payments" && React.createElement("button", { style: btnP, onClick: () => openModal("payment") }, "+ Log Payment"),
                 tab === "Grounds & Exterior Care" && React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
@@ -2496,8 +2502,8 @@ function App() {
                     React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
                         React.createElement("button", { style: { ...btnS, padding: "6px 12px", fontSize: 12 }, onClick: () => emailTenantInvite(tenants.find(t => t.id === lastInviteCode.id) || lastInviteCode) }, "Email Invite"),
                         React.createElement("button", { style: { ...btnS, padding: "6px 12px", fontSize: 12 }, onClick: () => setLastInviteCode(null) }, "Dismiss"))),
-                React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8 } }, "Tenants"),
-                tenants.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 20 } }, "No tenants yet.") : tenants.map(t => React.createElement("div", { key: t.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8 } },
+                React.createElement("h3", { style: { color: C.navy, fontSize: 15, marginBottom: 8 } }, "Clients"),
+                tenants.length === 0 ? React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 20 } }, "No clients yet.") : tenants.map(t => React.createElement("div", { key: t.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8 } },
                     React.createElement("div", { style: { fontWeight: 700 } }, t.full_name),
                     React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, t.email || "No email", " — ", t.invite_status),
                     t.invite_status === "pending" && React.createElement("div", { style: { fontFamily: "monospace", fontSize: 13, color: C.accent, marginTop: 4 } }, "Code: ", t.invite_code),
@@ -2514,7 +2520,7 @@ function App() {
                     req.photo_url && React.createElement("img", { src: req.photo_url, style: { maxWidth: 160, borderRadius: 6, marginTop: 8, display: "block" } }),
                     req.linked_repair_id && React.createElement("div", { style: { color: C.green, fontSize: 12, marginTop: 8 } }, "\u2713 Tracked in Repairs"),
                     React.createElement("div", { style: { marginTop: 10 } },
-                        React.createElement("input", { style: { ...inp, marginBottom: 6 }, placeholder: "Note to tenant (optional)", defaultValue: req.landlord_note || "", onBlur: e => { if (e.target.value !== (req.landlord_note || "")) saveRequestNote(req.id, e.target.value); } })),
+                        React.createElement("input", { style: { ...inp, marginBottom: 6 }, placeholder: "Note to client (optional)", defaultValue: req.landlord_note || "", onBlur: e => { if (e.target.value !== (req.landlord_note || "")) saveRequestNote(req.id, e.target.value); } })),
                     React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 } },
                         !req.linked_repair_id && React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => pushRequestToRepairs(req) }, "Push to Repairs"),
                         req.status !== "in_progress" && req.status !== "completed" && React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: () => updateRequestStatus(req.id, "in_progress") }, "Mark In Progress"),
@@ -2947,16 +2953,22 @@ function App() {
             !loadingData && tab === "Inspections" && !viewInspection && (inspections.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No inspections yet.") : inspections.map(insp => {
                 return (React.createElement("div", { key: insp.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
                     React.createElement("div", { onClick: () => { setViewInspection(insp.id); setForm({}); }, style: { cursor: "pointer", flex: 1, minWidth: 180 } },
-                        React.createElement("div", { style: { fontWeight: 700 } },
-                            insp.inspection_type,
-                            " \u2014 ",
-                            propName(insp.property_id)),
+                        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } },
+                            React.createElement("div", { style: { fontWeight: 700 } },
+                                insp.inspection_type,
+                                " \u2014 ",
+                                propName(insp.property_id)),
+                            React.createElement("span", { style: { background: insp.status === "Passed" ? C.green : (insp.status === "Failed" ? C.red : C.muted), color: "#fff", borderRadius: 100, padding: "2px 9px", fontSize: 11, fontWeight: 600 } }, insp.status || "Scheduled")),
                         React.createElement("div", { style: { color: C.muted } },
                             insp.inspection_date,
                             " \u2014 ",
                             (insp.sections || []).length,
                             " section(s)")),
-                    React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                    React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } },
+                        React.createElement("select", { value: insp.status || "Scheduled", onClick: e => e.stopPropagation(), onChange: e => updateInspectionStatus(insp.id, e.target.value), style: { ...inp, width: "auto", marginBottom: 0 } },
+                            React.createElement("option", null, "Scheduled"),
+                            React.createElement("option", null, "Passed"),
+                            React.createElement("option", null, "Failed")),
                         React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: (e) => { e.stopPropagation(); setPrintInspection(insp); setTimeout(() => window.print(), 100); } }, "Print"),
                         React.createElement("button", { style: { ...btnS, padding: "5px 10px", fontSize: 12 }, onClick: (e) => { e.stopPropagation(); emailInspection(insp); } }, "Email"),
                         React.createElement("button", { style: btnDangerSm, onClick: (e) => { e.stopPropagation(); deleteInspection(insp); } }, "Delete"))));
@@ -2968,7 +2980,11 @@ function App() {
                 return (React.createElement("div", null,
                     React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 } },
                         React.createElement("button", { style: btnS, onClick: () => { setViewInspection(null); setForm({}); } }, "\u2190 Back to Inspections"),
-                        React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                        React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } },
+                            React.createElement("select", { value: insp.status || "Scheduled", onChange: e => updateInspectionStatus(insp.id, e.target.value), style: { ...inp, width: "auto", marginBottom: 0 } },
+                                React.createElement("option", null, "Scheduled"),
+                                React.createElement("option", null, "Passed"),
+                                React.createElement("option", null, "Failed")),
                             React.createElement("button", { style: { ...btnS, padding: "9px 14px" }, onClick: () => { setPrintInspection(insp); setTimeout(() => window.print(), 100); } }, "Print"),
                             React.createElement("button", { style: { ...btnS, padding: "9px 14px" }, onClick: () => emailInspection(insp) }, "Email"),
                             React.createElement("button", { style: btnDangerSm, onClick: () => deleteInspection(insp) }, "Delete Entire Inspection"))),
@@ -3660,9 +3676,9 @@ function App() {
             React.createElement("select", { style: inp, value: form.propertyId || "", onChange: e => setF("propertyId", e.target.value) },
                 React.createElement("option", { value: "" }, "Select job site\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
-            React.createElement("select", { style: inp, value: form.inspectionType || "", onChange: e => setF("inspectionType", e.target.value) },
-                React.createElement("option", { value: "" }, "Select Inspection Type\u2026"),
-                ["Move-in", "Move-out", "New Acquisition", "Other"].map(t => React.createElement("option", { key: t, value: t }, t))),
+            React.createElement("input", { style: inp, placeholder: "Inspection Type (e.g. Framing, Electrical Rough-In, Final)", value: form.inspectionType || "", onChange: e => setF("inspectionType", e.target.value) }),
+            React.createElement("label", { style: { fontSize: 12, color: C.muted, display: "block", marginBottom: 4 } }, "Scheduled Date"),
+            React.createElement("input", { style: inp, type: "date", value: form.inspectionDate || "", onChange: e => setF("inspectionDate", e.target.value) }),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: { ...btnP, opacity: submitting ? 0.6 : 1 }, disabled: submitting, onClick: addInspection }, submitting ? "Saving\u2026" : "Create"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
@@ -3803,7 +3819,7 @@ function App() {
         React.createElement("button", { style: btnP, onClick: addResourceLink }, "Add"),
         React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
         viewImage && React.createElement(ImageViewer, { url: viewImage, onClose: () => setViewImage(null) }),
-        modal === "inviteTenant" && (React.createElement(Modal, { title: "Invite Tenant", onClose: closeModal },
+        modal === "inviteTenant" && (React.createElement(Modal, { title: "Invite Client", onClose: closeModal },
     React.createElement("select", { style: inp, value: form.tenantPropertyId || "", onChange: e => {
         const propId = e.target.value;
         const prop = properties.find(p => String(p.id) === propId);
