@@ -2385,31 +2385,16 @@ function App() {
         return ledger;
     };
     const addPayment = async () => {
-        if (!form.propertyId || !form.paymentType)
+        if (!form.propertyId || !form.paymentType || !form.paymentAmount)
             return;
-        const payload = { user_id: userId(), property_id: Number(form.propertyId), type: form.paymentType, payment_date: form.paymentDate || new Date().toISOString().slice(0, 10), notes: form.notes || "" };
-        if (form.paymentType === "Rent Payment") {
-            if (!form.paymentMonth || !form.paymentAmount)
-                return;
-            payload.rent_month = form.paymentMonth;
-            payload.amount = Number(form.paymentAmount) || 0;
-        }
-        else if (form.paymentType === "Security Deposit") {
-            if (!form.paymentAmount)
-                return;
-            payload.amount = Number(form.paymentAmount) || 0;
-        }
-        else if (form.paymentType === "Security Deposit Return") {
-            const depositTotal = Number(form.depositTotal) || 0;
-            const deductions = Number(form.deductions) || 0;
-            payload.amount = depositTotal - deductions;
-            payload.deductions = deductions;
-            payload.deduction_notes = form.deductionNotes || "";
-        }
-        else {
-            return;
-        }
-        const { data, error } = await withRetry(() => sb.from("payments").insert(payload).select());
+        const { data, error } = await withRetry(() => sb.from("payments").insert({
+            user_id: userId(),
+            property_id: Number(form.propertyId),
+            type: form.paymentType,
+            amount: Number(form.paymentAmount) || 0,
+            payment_date: form.paymentDate || new Date().toISOString().slice(0, 10),
+            notes: form.notes || "",
+        }).select());
         showErr(error);
         if (data)
             setPayments(p => [...p, ...data]);
@@ -2942,58 +2927,20 @@ function App() {
         React.createElement("img", { src: profile.signature_url, style: { maxWidth: 180, display: "block", border: "1px solid " + C.border, borderRadius: 6, padding: 8, background: "#fff" } }))),
     React.createElement(PhotoPicker, { idPrefix: "profile-signature", label: profile && profile.signature_url ? "Replace Signature" : "Signature", file: form.profileSignatureFile, resetKey: resetKey, onSelect: e => handlePhotoSelect(e, "profileSignatureFile") }),
     React.createElement("button", { style: btnP, onClick: saveProfile }, "Save"))),
-            !loadingData && tab === "Payments" && (properties.length === 0 ? (React.createElement("div", { style: { color: C.muted } }, "Add a property first, then you can log payments for it.")) : (properties.map(p => {
-    const deposits = payments.filter(pm => pm.property_id === p.id && pm.type === "Security Deposit");
-    const returns = payments.filter(pm => pm.property_id === p.id && pm.type === "Security Deposit Return");
-    const ledger = rentLedgerForProperty(p.id);
+            !loadingData && tab === "Payments" && (properties.length === 0 ? (React.createElement("div", { style: { color: C.muted } }, "Add a job site first, then you can log payments for it.")) : (properties.map(p => {
+    const pPayments = payments.filter(pm => pm.property_id === p.id);
+    const totalPaid = pPayments.reduce((s, pm) => s + Number(pm.amount || 0), 0);
+    const budget = Number(p.rent) || 0;
+    const remaining = budget - totalPaid;
     return (React.createElement("div", { key: p.id, style: { marginBottom: 24 } },
-        React.createElement("h3", { style: { color: C.navy, fontSize: 16, marginBottom: 8 } }, p.address),
-        React.createElement("h4", { style: { color: C.navy, fontSize: 14, marginBottom: 6, marginTop: 10 } }, "Security Deposit"),
-        deposits.length === 0 && returns.length === 0 ? (React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 8 } }, "No deposit activity recorded.")) : (React.createElement(React.Fragment, null,
-            deposits.map(d => (React.createElement("div", { key: d.id, style: { background: "#fff", padding: 12, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
-                React.createElement("div", null,
-                    React.createElement("div", { style: { fontWeight: 700 } },
-                        "Deposit Collected: $",
-                        d.amount),
-                    React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
-                        d.payment_date,
-                        d.notes ? " — " + d.notes : "")),
-                React.createElement("button", { style: btnDangerSm, onClick: () => deletePayment(d) }, "Delete")))),
-            returns.map(r => (React.createElement("div", { key: r.id, style: { background: "#fff", padding: 12, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
-                React.createElement("div", null,
-                    React.createElement("div", { style: { fontWeight: 700 } },
-                        "Deposit Returned: $",
-                        r.amount),
-                    React.createElement("div", { style: { color: C.muted, fontSize: 13 } },
-                        r.payment_date,
-                        r.deductions ? " — Deductions: $" + r.deductions : "",
-                        r.deduction_notes ? " (" + r.deduction_notes + ")" : "")),
-                React.createElement("button", { style: btnDangerSm, onClick: () => deletePayment(r) }, "Delete")))))),
-        React.createElement("h4", { style: { color: C.navy, fontSize: 14, marginBottom: 6, marginTop: 14 } }, "Rent Payments"),
-        ledger.length === 0 ? (React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, "No rent payments logged.")) : (ledger.slice().reverse().map(entry => (React.createElement("div", { key: entry.month, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10 } },
-            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 } },
-                React.createElement("div", { style: { fontWeight: 700 } }, monthLabel(entry.month)),
-                React.createElement("div", { style: { color: entry.paidInFull ? C.green : C.orange, fontSize: 13, fontWeight: 600 } },
-                    entry.paidInFull ? "\u2713 Paid in Full" : "Partial",
-                    " \u2014 $",
-                    entry.effectiveTotal.toFixed(2),
-                    " of $",
-                    entry.due)),
-            entry.carryIn > 0 && React.createElement("div", { style: { color: C.muted, fontSize: 12, marginTop: 4 } },
-                "Credit applied from previous month: $",
-                entry.carryIn.toFixed(2)),
-            entry.carryOut > 0 && React.createElement("div", { style: { color: C.muted, fontSize: 12, marginTop: 4 } },
-                "Overpayment credited to next month: $",
-                entry.carryOut.toFixed(2)),
-            entry.payments.map(x => (React.createElement("div", { key: x.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, fontSize: 13, color: C.muted } },
-                React.createElement("div", null,
-                    "$",
-                    x.amount,
-                    " on ",
-                    x.payment_date,
-                    x.notes ? " — " + x.notes : ""),
-                React.createElement("button", { style: btnDangerSm, onClick: () => deletePayment(x) }, "Delete")))),
-            React.createElement("button", { style: { ...btnS, padding: "6px 12px", fontSize: 12, marginTop: 10 }, onClick: () => emailReceipt(p, entry) }, "Email Receipt")))))));
+        React.createElement("h3", { style: { color: C.navy, fontSize: 16, marginBottom: 4 } }, p.address),
+        React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 10 } },
+            "Job Budget: $" + budget.toLocaleString() + "   \u2014   Paid: $" + totalPaid.toLocaleString() + "   \u2014   Remaining: $" + remaining.toLocaleString()),
+        pPayments.length === 0 ? (React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 16 } }, "No payments logged yet.")) : (pPayments.slice().reverse().map(pm => (React.createElement("div", { key: pm.id, style: { background: "#fff", padding: 14, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
+            React.createElement("div", null,
+                React.createElement("div", { style: { fontWeight: 700 } }, pm.type + ": $" + Number(pm.amount).toLocaleString()),
+                React.createElement("div", { style: { color: C.muted, fontSize: 13 } }, pm.payment_date, pm.notes ? " — " + pm.notes : "")),
+            React.createElement("button", { style: btnDangerSm, onClick: () => deletePayment(pm) }, "Delete")))))));
 }))),
             !loadingData && tab === "Inspections" && !viewInspection && (inspections.length === 0 ? React.createElement("div", { style: { color: C.muted } }, "No inspections yet.") : inspections.map(insp => {
                 return (React.createElement("div", { key: insp.id, style: { background: "#fff", padding: 16, borderRadius: 10, border: "1px solid " + C.border, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" } },
@@ -3765,20 +3712,10 @@ function App() {
         properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
     React.createElement("select", { style: inp, value: form.paymentType || "", onChange: e => setF("paymentType", e.target.value) },
         React.createElement("option", { value: "" }, "Select Payment Type\u2026"),
-        React.createElement("option", null, "Rent Payment"),
-        React.createElement("option", null, "Security Deposit"),
-        React.createElement("option", null, "Security Deposit Return")),
-    form.paymentType === "Rent Payment" && (React.createElement(React.Fragment, null,
-        React.createElement("input", { style: inp, type: "month", value: form.paymentMonth || "", onChange: e => setF("paymentMonth", e.target.value) }),
-        React.createElement("input", { style: inp, type: "number", placeholder: "Amount Paid", value: form.paymentAmount || "", onChange: e => setF("paymentAmount", e.target.value) }))),
-    form.paymentType === "Security Deposit" && (React.createElement("input", { style: inp, type: "number", placeholder: "Amount Collected", value: form.paymentAmount || "", onChange: e => setF("paymentAmount", e.target.value) })),
-    form.paymentType === "Security Deposit Return" && (React.createElement(React.Fragment, null,
-        React.createElement("input", { style: inp, type: "number", placeholder: "Total Deposit Originally Collected", value: form.depositTotal || "", onChange: e => setF("depositTotal", e.target.value) }),
-        React.createElement("input", { style: inp, type: "number", placeholder: "Deductions for Damages/Expenses", value: form.deductions || "", onChange: e => setF("deductions", e.target.value) }),
-        React.createElement("input", { style: inp, placeholder: "Deduction Notes (optional)", value: form.deductionNotes || "", onChange: e => setF("deductionNotes", e.target.value) }),
-        React.createElement("div", { style: { color: C.muted, fontSize: 13, marginBottom: 10 } },
-            "Amount to Return: $",
-            ((Number(form.depositTotal) || 0) - (Number(form.deductions) || 0)).toFixed(2)))),
+        React.createElement("option", null, "Deposit"),
+        React.createElement("option", null, "Progress Payment"),
+        React.createElement("option", null, "Final Payment")),
+    React.createElement("input", { style: inp, type: "number", placeholder: "Amount Received", value: form.paymentAmount || "", onChange: e => setF("paymentAmount", e.target.value) }),
     React.createElement("input", { style: inp, type: "date", value: form.paymentDate || "", onChange: e => setF("paymentDate", e.target.value) }),
     React.createElement("input", { style: inp, placeholder: "Notes", value: form.notes || "", onChange: e => setF("notes", e.target.value) }),
     React.createElement("div", { style: { display: "flex", gap: 10 } },
