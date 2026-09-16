@@ -3788,7 +3788,7 @@ function App() {
                 React.createElement("option", { value: "" }, "Select job site\u2026"),
                 properties.map(p => React.createElement("option", { key: p.id, value: p.id }, p.address))),
             React.createElement("input", { style: inp, placeholder: "Title (e.g. Floor Plan, Electrical Layout)", value: form.blueprintTitle || "", onChange: e => setF("blueprintTitle", e.target.value) }),
-            React.createElement("input", { style: inp, type: "file", accept: "image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.doc,.docx", onChange: e => setF("blueprintFile", e.target.files[0]) }),
+            React.createElement("input", { style: inp, type: "file", onChange: e => setF("blueprintFile", e.target.files[0]) }),
             React.createElement("div", { style: { display: "flex", gap: 10 } },
                 React.createElement("button", { style: btnP, onClick: addBlueprint }, "Upload"),
                 React.createElement("button", { style: btnS, onClick: closeModal }, "Cancel")))),
